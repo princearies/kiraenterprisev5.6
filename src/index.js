@@ -1,6 +1,6 @@
 /**
  * KiraEnterprise v5.6 - Complete Malaysian Accounting Suite
- * Single-File Cloudflare Worker with Full Accounting, Tax & Statutory Reporting
+ * Enhanced Chart of Accounts Module with Comprehensive Code Structure
  * Database: mykira (D1) - 4037f2cd-0c4a-4251-846e-534eb7b47338
  */
 
@@ -11,6 +11,8 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { headers: cors() });
     try {
       await initDatabase(env);
+      
+      // API Routes
       if (path === '/api/health') return handleHealth(env);
       if (path === '/api/companies' && request.method === 'GET') return await getCompanies(env);
       if (path === '/api/companies' && request.method === 'POST') return await createCompany(request, env);
@@ -21,46 +23,204 @@ export default {
       if (path === '/api/journal' && request.method === 'GET') return await getJournal(request, env);
       if (path === '/api/journal' && request.method === 'POST') return await createJournalEntry(request, env);
       if (path === '/api/ledger' && request.method === 'GET') return await getLedger(request, env);
+      
+      // Chart of Accounts API
       if (path === '/api/accounts' && request.method === 'GET') return await getAccounts(env);
+      if (path === '/api/accounts' && request.method === 'POST') return await createAccount(request, env);
+      if (path.match(/^\/api\/accounts\/[^/]+$/) && request.method === 'PUT') return await updateAccount(path, request, env);
+      if (path.match(/^\/api\/accounts\/[^/]+$/) && request.method === 'DELETE') return await deleteAccount(path, env);
+      
+      // Financial Reports
       if (path === '/api/trial-balance') return await getTrialBalance(request, env);
       if (path === '/api/profit-loss') return await getProfitLoss(request, env);
       if (path === '/api/balance-sheet') return await getBalanceSheet(request, env);
       if (path === '/api/zakat' && request.method === 'POST') return await calculateZakat(request, env);
+      
       return new Response(renderHTML(), { headers: { 'Content-Type': 'text/html; charset=utf-8', ...cors() } });
     } catch (err) { return json({ error: err.message }, 500); }
   }
 };
 
+// ============================================
+// DATABASE INITIALIZATION
+// ============================================
 async function initDatabase(env) {
   const tables = [
     `CREATE TABLE IF NOT EXISTS companies (id TEXT PRIMARY KEY, name TEXT, registration_no TEXT, tin TEXT, brn_ic TEXT, msic_code TEXT, address TEXT, city TEXT, state TEXT DEFAULT 'Sabah', postcode TEXT, phone TEXT, email TEXT, financial_year_end TEXT, tax_rate REAL DEFAULT 24, sst_rate REAL DEFAULT 6, director_name TEXT, accountant_name TEXT, is_active INTEGER DEFAULT 1)`,
-    `CREATE TABLE IF NOT EXISTS invoices (id TEXT PRIMARY KEY, company_id TEXT, invoice_no TEXT, customer_name TEXT, customer_tin TEXT, customer_brn_ic TEXT, customer_msic TEXT, customer_address TEXT, customer_email TEXT, customer_phone TEXT, date TEXT, due_date TEXT, subtotal REAL, tax_amount REAL, discount REAL DEFAULT 0, grand_total REAL, status TEXT DEFAULT 'draft', notes TEXT, is_einvoice INTEGER DEFAULT 0, einvoice_category TEXT, created_by TEXT, created_at TEXT, updated_at TEXT)`,
-    `CREATE TABLE IF NOT EXISTS invoice_line_items (id TEXT PRIMARY KEY, invoice_id TEXT, description TEXT, quantity REAL, unit_price REAL, tax_rate REAL, amount REAL, tax_amount REAL, total REAL, sort_order INTEGER)`,
-    `CREATE TABLE IF NOT EXISTS chart_of_accounts (code TEXT PRIMARY KEY, name TEXT, type TEXT, category TEXT, is_active INTEGER DEFAULT 1)`,
+    `CREATE TABLE IF NOT EXISTS invoices (id TEXT PRIMARY KEY, company_id TEXT, invoice_no TEXT, customer_name TEXT, customer_tin TEXT, customer_brn_ic TEXT, customer_msic TEXT, customer_address TEXT, customer_email TEXT, customer_phone TEXT, date TEXT, due_date TEXT, subtotal REAL, tax_amount REAL, discount REAL DEFAULT 0, grand_total REAL, status TEXT DEFAULT 'draft', notes TEXT, is_einvoice INTEGER DEFAULT 0, einvoice_category TEXT, revenue_account TEXT DEFAULT '4000', expense_account TEXT DEFAULT '5000', created_by TEXT, created_at TEXT, updated_at TEXT)`,
+    `CREATE TABLE IF NOT EXISTS invoice_line_items (id TEXT PRIMARY KEY, invoice_id TEXT, description TEXT, quantity REAL, unit_price REAL, tax_rate REAL, amount REAL, tax_amount REAL, total REAL, account_code TEXT, sort_order INTEGER)`,
+    `CREATE TABLE IF NOT EXISTS chart_of_accounts (code TEXT PRIMARY KEY, name TEXT, description TEXT, type TEXT, category TEXT, parent_code TEXT, is_active INTEGER DEFAULT 1, created_at TEXT)`,
     `CREATE TABLE IF NOT EXISTS journal_entries (id TEXT PRIMARY KEY, date TEXT, description TEXT, reference TEXT, debit_account TEXT, credit_account TEXT, amount REAL, auto_posted INTEGER DEFAULT 0, invoice_id TEXT, created_by TEXT, created_at TEXT)`,
     `CREATE TABLE IF NOT EXISTS zakat_calculations (id TEXT PRIMARY KEY, company_id TEXT, calculation_date TEXT, modal_kerja REAL, kaedah_pertumbuhan REAL, nisab REAL, zakat_amount REAL, notes TEXT, created_at TEXT)`
   ];
+  
   for (const sql of tables) await env.DB.prepare(sql).run();
+  
+  // Initialize comprehensive Chart of Accounts
   const count = await env.DB.prepare('SELECT COUNT(*) as c FROM chart_of_accounts').first();
   if (count.c === 0) {
     const accounts = [
-      ['1000','Cash & Bank','asset','Current Asset'],['1100','Accounts Receivable','asset','Current Asset'],['1200','Inventory','asset','Current Asset'],['1300','Fixed Assets','asset','Non-Current Asset'],['1400','Accumulated Depreciation','asset','Non-Current Asset'],
-      ['2000','Accounts Payable','liability','Current Liability'],['2100','SST Payable','liability','Current Liability'],['2200','Tax Payable','liability','Current Liability'],['2300','Long-term Loans','liability','Non-Current Liability'],
-      ['3000','Share Capital','equity','Equity'],['3100','Retained Earnings','equity','Equity'],
-      ['4000','Sales Revenue','income','Revenue'],['4100','Service Revenue','income','Revenue'],['4200','Other Income','income','Revenue'],
-      ['5000','Cost of Goods Sold','expense','COGS'],
-      ['6000','Salaries & Wages','expense','Operating Expense'],['6100','Rent Expense','expense','Operating Expense'],['6200','Utilities','expense','Operating Expense'],['6300','Marketing','expense','Operating Expense'],['6400','Professional Fees','expense','Operating Expense'],['6500','Depreciation','expense','Operating Expense']
+      // 1000 Series - ASSETS (ASET)
+      ['1000', 'Cash & Bank Equivalents', 'Liquid assets including cash on hand and bank balances', 'asset', 'Current Asset', null],
+      ['1010', 'Cash on Hand', 'Physical cash held by the business', 'asset', 'Current Asset', '1000'],
+      ['1020', 'Maybank Current Account', 'Maybank business current account', 'asset', 'Current Asset', '1000'],
+      ['1030', 'CIMB Savings Account', 'CIMB business savings account', 'asset', 'Current Asset', '1000'],
+      ['1040', 'Public Bank Account', 'Public Bank business account', 'asset', 'Current Asset', '1000'],
+      ['1100', 'Accounts Receivable', 'Money owed by customers for goods/services delivered', 'asset', 'Current Asset', null],
+      ['1110', 'Trade Debtors', 'Amounts owed by trade customers', 'asset', 'Current Asset', '1100'],
+      ['1120', 'Other Receivables', 'Non-trade amounts receivable', 'asset', 'Current Asset', '1100'],
+      ['1200', 'Inventory & Stock', 'Goods held for sale or raw materials', 'asset', 'Current Asset', null],
+      ['1210', 'Finished Goods', 'Completed products ready for sale', 'asset', 'Current Asset', '1200'],
+      ['1220', 'Raw Materials', 'Materials used in production', 'asset', 'Current Asset', '1200'],
+      ['1230', 'Work in Progress', 'Partially completed goods', 'asset', 'Current Asset', '1200'],
+      ['1300', 'Fixed Assets', 'Long-term tangible assets used in operations', 'asset', 'Non-Current Asset', null],
+      ['1310', 'Office Equipment', 'Computers, furniture, and office machinery', 'asset', 'Non-Current Asset', '1300'],
+      ['1320', 'Motor Vehicles', 'Company vehicles and transportation', 'asset', 'Non-Current Asset', '1300'],
+      ['1330', 'Machinery & Equipment', 'Production machinery and tools', 'asset', 'Non-Current Asset', '1300'],
+      ['1340', 'Land & Buildings', 'Property owned by the business', 'asset', 'Non-Current Asset', '1300'],
+      ['1400', 'Accumulated Depreciation', 'Total depreciation charged on fixed assets (contra asset)', 'asset', 'Non-Current Asset', null],
+      ['1410', 'Accum. Deprec. - Equipment', 'Accumulated depreciation on office equipment', 'asset', 'Non-Current Asset', '1400'],
+      ['1420', 'Accum. Deprec. - Vehicles', 'Accumulated depreciation on motor vehicles', 'asset', 'Non-Current Asset', '1400'],
+      ['1500', 'Prepayments', 'Expenses paid in advance', 'asset', 'Current Asset', null],
+      ['1600', 'Deposits', 'Security deposits and advances', 'asset', 'Current Asset', null],
+      
+      // 2000 Series - LIABILITIES (LIABILITI)
+      ['2000', 'Current Liabilities', 'Obligations due within one year', 'liability', 'Current Liability', null],
+      ['2100', 'Accounts Payable', 'Money owed to suppliers for goods/services received', 'liability', 'Current Liability', null],
+      ['2110', 'Trade Creditors', 'Amounts owed to trade suppliers', 'liability', 'Current Liability', '2100'],
+      ['2120', 'Other Payables', 'Non-trade amounts payable', 'liability', 'Current Liability', '2100'],
+      ['2200', 'Tax Payables', 'Taxes owed to government authorities', 'liability', 'Current Liability', null],
+      ['2210', 'SST Payable', 'Sales and Service Tax collected but not yet remitted', 'liability', 'Current Liability', '2200'],
+      ['2220', 'Income Tax Payable', 'Corporate income tax owed to LHDN', 'liability', 'Current Liability', '2200'],
+      ['2230', 'EPF Payable', 'Employees Provident Fund contributions owed', 'liability', 'Current Liability', '2200'],
+      ['2240', 'SOCSO Payable', 'Social Security Organization contributions owed', 'liability', 'Current Liability', '2200'],
+      ['2250', 'EIS Payable', 'Employment Insurance System contributions owed', 'liability', 'Current Liability', '2200'],
+      ['2260', 'PCB Payable', 'Monthly Tax Deduction (Potongan Cukai Berjadual) owed', 'liability', 'Current Liability', '2200'],
+      ['2300', 'Accruals', 'Expenses incurred but not yet paid', 'liability', 'Current Liability', null],
+      ['2310', 'Accrued Salaries', 'Salaries earned by employees but not yet paid', 'liability', 'Current Liability', '2300'],
+      ['2320', 'Accrued Utilities', 'Utilities used but not yet billed', 'liability', 'Current Liability', '2300'],
+      ['2400', 'Short-term Loans', 'Bank loans and overdrafts due within one year', 'liability', 'Current Liability', null],
+      ['2500', 'Non-Current Liabilities', 'Obligations due after one year', 'liability', 'Non-Current Liability', null],
+      ['2510', 'Long-term Bank Loans', 'Bank loans with maturity over one year', 'liability', 'Non-Current Liability', '2500'],
+      ['2520', 'Hire Purchase Payable', 'Hire purchase obligations for assets', 'liability', 'Non-Current Liability', '2500'],
+      
+      // 3000 Series - EQUITY (EKUITI)
+      ['3000', 'Shareholders Equity', 'Owners interest in the business', 'equity', 'Equity', null],
+      ['3100', 'Share Capital', 'Paid-up capital from shareholders', 'equity', 'Equity', null],
+      ['3110', 'Ordinary Shares', 'Ordinary share capital', 'equity', 'Equity', '3100'],
+      ['3120', 'Preference Shares', 'Preference share capital', 'equity', 'Equity', '3100'],
+      ['3200', 'Retained Earnings', 'Accumulated profits not distributed as dividends', 'equity', 'Equity', null],
+      ['3210', 'Current Year Earnings', 'Profit or loss for current financial year', 'equity', 'Equity', '3200'],
+      ['3220', 'Prior Year Earnings', 'Accumulated profits from previous years', 'equity', 'Equity', '3200'],
+      ['3300', 'Dividends Paid', 'Dividends distributed to shareholders (contra equity)', 'equity', 'Equity', null],
+      ['3400', 'Directors Loans', 'Loans from/to directors', 'equity', 'Equity', null],
+      
+      // 4000 Series - REVENUE (HASIL)
+      ['4000', 'Sales Revenue', 'Income from sale of goods', 'income', 'Revenue', null],
+      ['4010', 'Local Sales', 'Sales to customers within Malaysia', 'income', 'Revenue', '4000'],
+      ['4020', 'Export Sales', 'Sales to customers outside Malaysia', 'income', 'Revenue', '4000'],
+      ['4100', 'Service Revenue', 'Income from services rendered', 'income', 'Revenue', null],
+      ['4110', 'Consulting Fees', 'Revenue from consulting services', 'income', 'Revenue', '4100'],
+      ['4120', 'Professional Fees', 'Revenue from professional services', 'income', 'Revenue', '4100'],
+      ['4130', 'Commission Income', 'Commission earned on sales', 'income', 'Revenue', '4100'],
+      ['4200', 'Other Operating Income', 'Income from other business operations', 'income', 'Revenue', null],
+      ['4210', 'Rental Income', 'Income from property rental', 'income', 'Revenue', '4200'],
+      ['4220', 'Interest Income', 'Interest earned on bank deposits', 'income', 'Revenue', '4200'],
+      ['4230', 'Discount Received', 'Discounts received from suppliers', 'income', 'Revenue', '4200'],
+      ['4240', 'Sundry Income', 'Miscellaneous income', 'income', 'Revenue', '4200'],
+      ['4300', 'Non-Operating Income', 'Income not from core business operations', 'income', 'Revenue', null],
+      ['4310', 'Gain on Sale of Assets', 'Profit from disposal of fixed assets', 'income', 'Revenue', '4300'],
+      ['4320', 'Foreign Exchange Gain', 'Gains from currency fluctuations', 'income', 'Revenue', '4300'],
+      
+      // 5000 Series - COST OF GOODS SOLD (KOS JUALAN)
+      ['5000', 'Cost of Goods Sold', 'Direct costs attributable to goods sold', 'expense', 'COGS', null],
+      ['5010', 'Opening Stock', 'Value of inventory at start of period', 'expense', 'COGS', '5000'],
+      ['5020', 'Purchases', 'Cost of goods purchased for resale', 'expense', 'COGS', '5000'],
+      ['5030', 'Direct Labour', 'Wages of workers directly involved in production', 'expense', 'COGS', '5000'],
+      ['5040', 'Manufacturing Overheads', 'Indirect production costs', 'expense', 'COGS', '5000'],
+      ['5050', 'Closing Stock', 'Value of inventory at end of period (credit balance)', 'expense', 'COGS', '5000'],
+      ['5060', 'Purchase Returns', 'Goods returned to suppliers', 'expense', 'COGS', '5000'],
+      ['5070', 'Carriage Inwards', 'Transport costs for incoming goods', 'expense', 'COGS', '5000'],
+      
+      // 6000 Series - OPERATING EXPENSES (PERBELANJAAN OPERASI)
+      ['6000', 'Operating Expenses', 'Expenses incurred in day-to-day operations', 'expense', 'Operating Expense', null],
+      
+      // 6100 - Staff Costs
+      ['6100', 'Staff Costs', 'All employee-related expenses', 'expense', 'Operating Expense', null],
+      ['6110', 'Salaries & Wages', 'Basic salaries and wages paid to employees', 'expense', 'Operating Expense', '6100'],
+      ['6120', 'EPF Contributions', 'Employer EPF contributions (12-13%)', 'expense', 'Operating Expense', '6100'],
+      ['6130', 'SOCSO Contributions', 'Employer SOCSO contributions', 'expense', 'Operating Expense', '6100'],
+      ['6140', 'EIS Contributions', 'Employer EIS contributions', 'expense', 'Operating Expense', '6100'],
+      ['6150', 'Staff Benefits', 'Bonuses, allowances, and benefits', 'expense', 'Operating Expense', '6100'],
+      ['6160', 'Staff Training', 'Training and development costs', 'expense', 'Operating Expense', '6100'],
+      
+      // 6200 - Premises Costs
+      ['6200', 'Premises Costs', 'Expenses related to business premises', 'expense', 'Operating Expense', null],
+      ['6210', 'Rent Expense', 'Rental payments for office/shop premises', 'expense', 'Operating Expense', '6200'],
+      ['6220', 'Utilities', 'Electricity, water, internet, and phone', 'expense', 'Operating Expense', '6200'],
+      ['6230', 'Insurance', 'Business insurance premiums', 'expense', 'Operating Expense', '6200'],
+      ['6240', 'Security', 'Security services and systems', 'expense', 'Operating Expense', '6200'],
+      ['6250', 'Cleaning & Maintenance', 'Premises cleaning and maintenance', 'expense', 'Operating Expense', '6200'],
+      
+      // 6300 - Marketing & Sales
+      ['6300', 'Marketing & Sales', 'Expenses for marketing and sales activities', 'expense', 'Operating Expense', null],
+      ['6310', 'Advertising', 'Advertising costs (online, print, media)', 'expense', 'Operating Expense', '6300'],
+      ['6320', 'Promotions', 'Sales promotions and discounts given', 'expense', 'Operating Expense', '6300'],
+      ['6330', 'Entertainment', 'Business entertainment expenses', 'expense', 'Operating Expense', '6300'],
+      ['6340', 'Travel & Accommodation', 'Business travel and hotel costs', 'expense', 'Operating Expense', '6300'],
+      
+      // 6400 - Administrative
+      ['6400', 'Administrative Expenses', 'General administrative costs', 'expense', 'Operating Expense', null],
+      ['6410', 'Office Supplies', 'Stationery, printing, and office materials', 'expense', 'Operating Expense', '6400'],
+      ['6420', 'Postage & Courier', 'Postal and courier charges', 'expense', 'Operating Expense', '6400'],
+      ['6430', 'Telephone & Internet', 'Business phone and internet costs', 'expense', 'Operating Expense', '6400'],
+      ['6440', 'Bank Charges', 'Bank fees and charges', 'expense', 'Operating Expense', '6400'],
+      ['6450', 'Audit & Accounting Fees', 'Professional fees for audit and accounting', 'expense', 'Operating Expense', '6400'],
+      ['6460', 'Legal Fees', 'Legal and professional fees', 'expense', 'Operating Expense', '6400'],
+      ['6470', 'Secretarial Fees', 'Company secretarial fees', 'expense', 'Operating Expense', '6400'],
+      ['6480', 'Licenses & Permits', 'Business licenses and permits', 'expense', 'Operating Expense', '6400'],
+      ['6490', 'Subscriptions', 'Magazines, software, and service subscriptions', 'expense', 'Operating Expense', '6400'],
+      
+      // 6500 - Depreciation & Amortization
+      ['6500', 'Depreciation & Amortization', 'Non-cash charges for asset value reduction', 'expense', 'Operating Expense', null],
+      ['6510', 'Depreciation - Equipment', 'Depreciation on office equipment', 'expense', 'Operating Expense', '6500'],
+      ['6520', 'Depreciation - Vehicles', 'Depreciation on motor vehicles', 'expense', 'Operating Expense', '6500'],
+      ['6530', 'Depreciation - Machinery', 'Depreciation on production machinery', 'expense', 'Operating Expense', '6500'],
+      ['6540', 'Amortization', 'Amortization of intangible assets', 'expense', 'Operating Expense', '6500'],
+      
+      // 6600 - Finance Costs
+      ['6600', 'Finance Costs', 'Interest and financing expenses', 'expense', 'Operating Expense', null],
+      ['6610', 'Interest Expense', 'Interest on bank loans and overdrafts', 'expense', 'Operating Expense', '6600'],
+      ['6620', 'Hire Purchase Interest', 'Interest on hire purchase agreements', 'expense', 'Operating Expense', '6600'],
+      ['6630', 'Bank Overdraft Interest', 'Interest on bank overdraft facilities', 'expense', 'Operating Expense', '6600'],
+      
+      // 6700 - Other Expenses
+      ['6700', 'Other Expenses', 'Miscellaneous operating expenses', 'expense', 'Operating Expense', null],
+      ['6710', 'Bad Debts', 'Uncollectible accounts written off', 'expense', 'Operating Expense', '6700'],
+      ['6720', 'Donations', 'Charitable donations and contributions', 'expense', 'Operating Expense', '6700'],
+      ['6730', 'Sundry Expenses', 'Miscellaneous expenses not elsewhere classified', 'expense', 'Operating Expense', '6700'],
+      ['6740', 'Foreign Exchange Loss', 'Losses from currency fluctuations', 'expense', 'Operating Expense', '6700'],
+      ['6750', 'Loss on Sale of Assets', 'Loss from disposal of fixed assets', 'expense', 'Operating Expense', '6700']
     ];
-    for (const [code, name, type, category] of accounts) {
-      await env.DB.prepare('INSERT INTO chart_of_accounts (code, name, type, category) VALUES (?, ?, ?, ?)').bind(code, name, type, category).run();
+    
+    const now = new Date().toISOString();
+    for (const [code, name, description, type, category, parent] of accounts) {
+      await env.DB.prepare('INSERT INTO chart_of_accounts (code, name, description, type, category, parent_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .bind(code, name, description, type, category, parent, now).run();
     }
   }
 }
 
+// ============================================
+// UTILITIES
+// ============================================
 function cors() { return { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' }; }
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', ...cors() } }); }
 function handleHealth(env) { return json({ status: 'ok', app: env.APP_NAME, version: env.APP_VERSION, region: env.REGION }); }
 
+// ============================================
+// COMPANIES
+// ============================================
 async function getCompanies(env) { const { results } = await env.DB.prepare('SELECT * FROM companies WHERE is_active = 1').all(); return json(results); }
 async function createCompany(request, env) {
   const b = await request.json();
@@ -69,6 +229,9 @@ async function createCompany(request, env) {
   return json({ id }, 201);
 }
 
+// ============================================
+// INVOICES
+// ============================================
 async function getInvoices(request, env) {
   const url = new URL(request.url);
   const cid = url.searchParams.get('company_id');
@@ -90,11 +253,42 @@ async function getInvoice(path, env) {
 async function createInvoice(request, env) {
   const b = await request.json();
   const id = crypto.randomUUID(); const now = new Date().toISOString();
-  await env.DB.prepare('INSERT INTO invoices (id,company_id,invoice_no,customer_name,customer_tin,customer_brn_ic,customer_msic,customer_address,customer_email,customer_phone,date,due_date,subtotal,tax_amount,discount,grand_total,status,notes,is_einvoice,einvoice_category,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,b.company_id,b.invoice_no||('INV-'+Date.now()),b.customer_name,b.customer_tin,b.customer_brn_ic,b.customer_msic,b.customer_address,b.customer_email,b.customer_phone,b.date,b.due_date,b.subtotal,b.tax_amount,b.discount||0,b.grand_total,b.status||'draft',b.notes,b.is_einvoice?1:0,b.einvoice_category||'01001','web',now,now).run();
-  if (b.line_items) for (let i=0;i<b.line_items.length;i++) { const it=b.line_items[i]; await env.DB.prepare('INSERT INTO invoice_line_items (id,invoice_id,description,quantity,unit_price,tax_rate,amount,tax_amount,total,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),id,it.description,it.quantity,it.unit_price,it.tax_rate,it.amount,it.tax_amount,it.total,i).run(); }
-  await env.DB.prepare('INSERT INTO journal_entries (id,date,description,reference,debit_account,credit_account,amount,auto_posted,invoice_id,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),b.date,'Invoice: '+b.customer_name,b.invoice_no,'1100','4000',b.subtotal,1,id,'system',now).run();
-  if (b.tax_amount > 0) await env.DB.prepare('INSERT INTO journal_entries (id,date,description,reference,debit_account,credit_account,amount,auto_posted,invoice_id,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),b.date,'SST on '+b.invoice_no,b.invoice_no,'1100','2100',b.tax_amount,1,id,'system',now).run();
+  
+  // Auto-map accounts based on invoice type
+  const revenueAccount = b.revenue_account || '4000'; // Default: Sales Revenue
+  const sstAccount = '2210'; // SST Payable
+  
+  await env.DB.prepare('INSERT INTO invoices (id,company_id,invoice_no,customer_name,customer_tin,customer_brn_ic,customer_msic,customer_address,customer_email,customer_phone,date,due_date,subtotal,tax_amount,discount,grand_total,status,notes,is_einvoice,einvoice_category,revenue_account,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,b.company_id,b.invoice_no||('INV-'+Date.now()),b.customer_name,b.customer_tin,b.customer_brn_ic,b.customer_msic,b.customer_address,b.customer_email,b.customer_phone,b.date,b.due_date,b.subtotal,b.tax_amount,b.discount||0,b.grand_total,b.status||'draft',b.notes,b.is_einvoice?1:0,b.einvoice_category||'01001',revenueAccount,'web',now,now).run();
+  
+  // Insert line items with account codes
+  if (b.line_items) {
+    for (let i=0;i<b.line_items.length;i++) {
+      const it=b.line_items[i];
+      // Auto-map account based on description if not provided
+      const accountCode = it.account_code || autoMapAccount(it.description);
+      await env.DB.prepare('INSERT INTO invoice_line_items (id,invoice_id,description,quantity,unit_price,tax_rate,amount,tax_amount,total,account_code,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),id,it.description,it.quantity,it.unit_price,it.tax_rate,it.amount,it.tax_amount,it.total,accountCode,i).run();
+    }
+  }
+  
+  // Auto-post to journal: Debit Accounts Receivable, Credit Revenue
+  await env.DB.prepare('INSERT INTO journal_entries (id,date,description,reference,debit_account,credit_account,amount,auto_posted,invoice_id,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),b.date,'Invoice: '+b.customer_name,b.invoice_no,'1100',revenueAccount,b.subtotal,1,id,'system',now).run();
+  
+  // Post SST if applicable
+  if (b.tax_amount > 0) {
+    await env.DB.prepare('INSERT INTO journal_entries (id,date,description,reference,debit_account,credit_account,amount,auto_posted,invoice_id,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),b.date,'SST on '+b.invoice_no,b.invoice_no,'1100',sstAccount,b.tax_amount,1,id,'system',now).run();
+  }
+  
   return json({ id }, 201);
+}
+
+// Auto-map account based on description keywords
+function autoMapAccount(description) {
+  const desc = (description || '').toLowerCase();
+  if (desc.includes('service') || desc.includes('consulting') || desc.includes('professional')) return '4100';
+  if (desc.includes('rental') || desc.includes('rent')) return '4210';
+  if (desc.includes('commission')) return '4130';
+  if (desc.includes('interest')) return '4220';
+  return '4000'; // Default to Sales Revenue
 }
 
 async function deleteInvoice(path, env) {
@@ -105,6 +299,37 @@ async function deleteInvoice(path, env) {
   return json({ success: true });
 }
 
+// ============================================
+// CHART OF ACCOUNTS
+// ============================================
+async function getAccounts(env) {
+  const { results } = await env.DB.prepare('SELECT * FROM chart_of_accounts WHERE is_active = 1 ORDER BY code').all();
+  return json(results);
+}
+
+async function createAccount(request, env) {
+  const b = await request.json();
+  const now = new Date().toISOString();
+  await env.DB.prepare('INSERT INTO chart_of_accounts (code, name, description, type, category, parent_code, created_at) VALUES (?,?,?,?,?,?,?)').bind(b.code, b.name, b.description, b.type, b.category, b.parent_code || null, now).run();
+  return json({ code: b.code }, 201);
+}
+
+async function updateAccount(path, request, env) {
+  const code = path.split('/').pop();
+  const b = await request.json();
+  await env.DB.prepare('UPDATE chart_of_accounts SET name = ?, description = ?, type = ?, category = ?, parent_code = ? WHERE code = ?').bind(b.name, b.description, b.type, b.category, b.parent_code || null, code).run();
+  return json({ success: true });
+}
+
+async function deleteAccount(path, env) {
+  const code = path.split('/').pop();
+  await env.DB.prepare('UPDATE chart_of_accounts SET is_active = 0 WHERE code = ?').bind(code).run();
+  return json({ success: true });
+}
+
+// ============================================
+// JOURNAL & LEDGER
+// ============================================
 async function getJournal(request, env) {
   const url = new URL(request.url);
   const from = url.searchParams.get('from'); const to = url.searchParams.get('to');
@@ -137,8 +362,9 @@ async function getLedger(request, env) {
   return json({ account, entries: withBal, totalBalance: balance });
 }
 
-async function getAccounts(env) { const { results } = await env.DB.prepare('SELECT * FROM chart_of_accounts WHERE is_active = 1 ORDER BY code').all(); return json(results); }
-
+// ============================================
+// FINANCIAL REPORTS
+// ============================================
 async function getTrialBalance(request, env) {
   const url = new URL(request.url);
   const asOf = url.searchParams.get('date') || new Date().toISOString().split('T')[0];
@@ -146,7 +372,7 @@ async function getTrialBalance(request, env) {
   const tb = []; let td = 0, tc = 0;
   for (const acc of accounts) {
     const r = await env.DB.prepare('SELECT COALESCE(SUM(CASE WHEN debit_account=? THEN amount ELSE 0 END),0) as td, COALESCE(SUM(CASE WHEN credit_account=? THEN amount ELSE 0 END),0) as tc FROM journal_entries WHERE date <= ?').bind(acc.code,acc.code,asOf).first();
-    if (r.td > 0 || r.tc > 0) { tb.push({ code: acc.code, name: acc.name, type: acc.type, debit: r.td, credit: r.tc }); td += r.td; tc += r.tc; }
+    if (r.td > 0 || r.tc > 0) { tb.push({ code: acc.code, name: acc.name, description: acc.description, type: acc.type, debit: r.td, credit: r.tc }); td += r.td; tc += r.tc; }
   }
   return json({ as_of_date: asOf, accounts: tb, total_debit: td, total_credit: tc, balanced: Math.abs(td-tc)<0.01, difference: td-tc });
 }
@@ -156,7 +382,7 @@ async function getProfitLoss(request, env) {
   const from = url.searchParams.get('from') || new Date(new Date().getFullYear(),0,1).toISOString().split('T')[0];
   const to = url.searchParams.get('to') || new Date().toISOString().split('T')[0];
   const rev = await env.DB.prepare('SELECT COALESCE(SUM(amount),0) as t FROM journal_entries WHERE credit_account LIKE ? AND date BETWEEN ? AND ?').bind('4%',from,to).first();
-  const cogs = await env.DB.prepare('SELECT COALESCE(SUM(amount),0) as t FROM journal_entries WHERE debit_account = ? AND date BETWEEN ? AND ?').bind('5000',from,to).first();
+  const cogs = await env.DB.prepare('SELECT COALESCE(SUM(amount),0) as t FROM journal_entries WHERE debit_account LIKE ? AND date BETWEEN ? AND ?').bind('5%',from,to).first();
   const opex = await env.DB.prepare('SELECT COALESCE(SUM(amount),0) as t FROM journal_entries WHERE debit_account LIKE ? AND date BETWEEN ? AND ?').bind('6%',from,to).first();
   return json({ period: { from, to }, revenue: rev.t, cogs: cogs.t, gross_profit: rev.t - cogs.t, operating_expenses: opex.t, net_profit: rev.t - cogs.t - opex.t });
 }
@@ -180,7 +406,7 @@ async function calculateZakat(request, env) {
 }
 
 // ============================================
-// FRONTEND HTML - COMPLETE SPA
+// FRONTEND HTML - COMPLETE SPA WITH CHART OF ACCOUNTS
 // ============================================
 function renderHTML() {
   return `<!DOCTYPE html>
@@ -215,7 +441,7 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 <body class="bg-gray-50 min-h-screen">
 <div id="app"></div>
 <script>
-const S={view:'dashboard',companies:[],invoices:[],journal:[],accounts:[],company:null,modal:null,reportData:null};
+const S={view:'dashboard',companies:[],invoices:[],journal:[],accounts:[],company:null};
 const fmt=n=>'RM '+Number(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
 async function api(p,o={}){const r=await fetch(p,{headers:{'Content-Type':'application/json'},...o});return r.json()}
 
@@ -233,7 +459,7 @@ function renderShell(){
   h+='<div class="flex items-center gap-3"><div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">K</div>';
   h+='<div><h1 class="font-bold text-gray-800">KiraEnterprise v5.6</h1><p class="text-xs text-gray-500">'+(S.company?S.company.name:'Malaysian Accounting Suite')+'</p></div></div></div>';
   h+='<nav class="max-w-7xl mx-auto px-4 pb-2 flex gap-1 overflow-x-auto text-xs">';
-  const tabs=[['dashboard','📊 Dashboard'],['invoices','📄 Invoices'],['journal','📖 Journal'],['ledger','📒 Ledger'],['trial-balance','⚖️ Trial Balance'],['profit-loss','💰 P&L'],['balance-sheet','📊 Balance Sheet'],['zakat','🕌 Zakat'],['settings','⚙️ Settings']];
+  const tabs=[['dashboard','📊 Dashboard'],['invoices','📄 Invoices'],['accounts','📋 Chart of Accounts'],['journal','📖 Journal'],['ledger','📒 Ledger'],['trial-balance','⚖️ Trial Balance'],['profit-loss','💰 P&L'],['balance-sheet','📊 Balance Sheet'],['zakat','🕌 Zakat']];
   tabs.forEach(([id,l])=>{h+='<button onclick="nav(\\''+id+'\\')" class="px-3 py-1.5 rounded-lg font-medium whitespace-nowrap '+(S.view===id?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200')+'">'+l+'</button>'});
   h+='</nav></header>';
   h+='<main class="max-w-7xl mx-auto px-4 py-4 pb-20">'+renderView()+'</main>';
@@ -245,18 +471,18 @@ function renderView(){
   switch(S.view){
     case 'dashboard':return renderDashboard();
     case 'invoices':return renderInvoices();
+    case 'accounts':return renderAccounts();
     case 'journal':return renderJournal();
     case 'ledger':return renderLedger();
     case 'trial-balance':return renderTrialBalance();
     case 'profit-loss':return renderPL();
     case 'balance-sheet':return renderBS();
     case 'zakat':return renderZakat();
-    case 'settings':return renderSettings();
     default:return renderDashboard();
   }
 }
 
-async function renderDashboard(){
+function renderDashboard(){
   const total=S.invoices.reduce((s,i)=>s+(i.grand_total||0),0);
   const paid=S.invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+(i.grand_total||0),0);
   const outstanding=S.invoices.filter(i=>i.status==='sent'||i.status==='overdue').reduce((s,i)=>s+(i.grand_total||0),0);
@@ -268,13 +494,58 @@ async function renderDashboard(){
   statCard('Paid',fmt(paid),'bg-purple-500','✅')+
   '</div>'+
   '<div class="grid grid-cols-2 md:grid-cols-3 gap-3">'+
+  '<button onclick="nav(\\'accounts\\')" class="bg-indigo-600 text-white rounded-xl p-4 text-center hover:bg-indigo-700"><span class="text-2xl block mb-1">📋</span><span class="text-sm font-medium">Chart of Accounts</span></button>'+
   '<button onclick="nav(\\'invoices\\')" class="bg-blue-600 text-white rounded-xl p-4 text-center hover:bg-blue-700"><span class="text-2xl block mb-1">📄</span><span class="text-sm font-medium">Invoices</span></button>'+
-  '<button onclick="nav(\\'journal\\')" class="bg-indigo-600 text-white rounded-xl p-4 text-center hover:bg-indigo-700"><span class="text-2xl block mb-1">📖</span><span class="text-sm font-medium">Journal</span></button>'+
   '<button onclick="nav(\\'trial-balance\\')" class="bg-teal-600 text-white rounded-xl p-4 text-center hover:bg-teal-700"><span class="text-2xl block mb-1">⚖️</span><span class="text-sm font-medium">Trial Balance</span></button>'+
   '</div></div>';
 }
 
 function statCard(t,v,c,icon){return '<div class="bg-white rounded-xl border border-gray-200 p-4"><div class="flex justify-between items-start mb-2"><span class="text-2xl">'+icon+'</span></div><p class="text-xl font-bold text-gray-800">'+v+'</p><p class="text-xs text-gray-500 mt-1">'+t+'</p></div>'}
+
+function renderAccounts(){
+  // Group accounts by type
+  const groups = {
+    asset: { title: '1000 Series - ASSETS (ASET)', color: 'bg-blue-50 border-blue-200', accounts: [] },
+    liability: { title: '2000 Series - LIABILITIES (LIABILITI)', color: 'bg-red-50 border-red-200', accounts: [] },
+    equity: { title: '3000 Series - EQUITY (EKUITI)', color: 'bg-purple-50 border-purple-200', accounts: [] },
+    income: { title: '4000 Series - REVENUE (HASIL)', color: 'bg-green-50 border-green-200', accounts: [] },
+    expense: { title: '5000+ Series - EXPENSES (PERBELANJAAN)', color: 'bg-amber-50 border-amber-200', accounts: [] }
+  };
+  
+  S.accounts.forEach(acc => {
+    if (groups[acc.type]) groups[acc.type].accounts.push(acc);
+  });
+  
+  let h = '<div class="fade-in space-y-4"><h2 class="text-2xl font-bold text-gray-800">Chart of Accounts (Carta Akaun)</h2>';
+  h += '<p class="text-sm text-gray-600">Comprehensive account code structure with descriptions for Malaysian accounting standards</p>';
+  
+  // Render each group
+  Object.keys(groups).forEach(type => {
+    const group = groups[type];
+    if (group.accounts.length === 0) return;
+    
+    h += '<div class="bg-white rounded-xl border-2 ' + group.color + ' p-4">';
+    h += '<h3 class="font-bold text-lg mb-3">' + group.title + '</h3>';
+    h += '<div class="space-y-2">';
+    
+    group.accounts.forEach(acc => {
+      const indent = acc.parent_code ? 'ml-6' : '';
+      h += '<div class="flex items-start gap-3 p-2 hover:bg-white rounded-lg ' + indent + '">';
+      h += '<span class="font-mono text-sm font-semibold text-gray-700 w-16 flex-shrink-0">' + acc.code + '</span>';
+      h += '<div class="flex-1">';
+      h += '<p class="text-sm font-medium text-gray-800">' + acc.name + '</p>';
+      h += '<p class="text-xs text-gray-500 mt-0.5">' + (acc.description || '') + '</p>';
+      h += '</div>';
+      h += '<span class="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">' + acc.category + '</span>';
+      h += '</div>';
+    });
+    
+    h += '</div></div>';
+  });
+  
+  h += '</div>';
+  return h;
+}
 
 function renderInvoices(){
   let h='<div class="fade-in space-y-4"><div class="flex justify-between items-center"><h2 class="text-2xl font-bold">Invoices</h2>';
@@ -327,6 +598,7 @@ async function renderLedger(){
   S.accounts.forEach(a=>{h+='<option value="'+a.code+'" '+(a.code===S.ledgerAccount?'selected':'')+'>'+a.code+' - '+a.name+'</option>'});
   h+='</select></div>';
   h+='<div class="bg-white rounded-xl border p-4"><h3 class="font-semibold mb-2">'+data.account.code+' - '+data.account.name+' ('+data.account.type+')</h3>';
+  h+='<p class="text-xs text-gray-500 mb-3">'+data.account.description+'</p>';
   h+='<table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-3 py-2 text-left text-xs">Date</th><th class="px-3 py-2 text-left text-xs">Description</th><th class="px-3 py-2 text-right text-xs">Debit</th><th class="px-3 py-2 text-right text-xs">Credit</th><th class="px-3 py-2 text-right text-xs">Balance</th></tr></thead><tbody>';
   data.entries.forEach(e=>{
     h+='<tr class="border-t"><td class="px-3 py-2 text-xs">'+e.date+'</td><td class="px-3 py-2 text-sm">'+e.description+'</td>';
@@ -343,12 +615,13 @@ async function renderTrialBalance(){
   h+='<button onclick="printTB()" class="px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-medium hover:bg-teal-700 no-print">🖨️ Print</button></div>';
   if(!data.balanced) h+='<div class="bg-red-50 border border-red-200 rounded-xl p-3"><p class="text-red-700 text-sm font-medium">⚠️ WARNING: Debits and Credits do not match! Difference: '+fmt(data.difference)+'</p></div>';
   else h+='<div class="bg-green-50 border border-green-200 rounded-xl p-3"><p class="text-green-700 text-sm font-medium">✅ Trial Balance is balanced</p></div>';
-  h+='<div class="bg-white rounded-xl border overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-3 py-2 text-left text-xs font-semibold">Code</th><th class="px-3 py-2 text-left text-xs font-semibold">Account</th><th class="px-3 py-2 text-right text-xs font-semibold">Debit (RM)</th><th class="px-3 py-2 text-right text-xs font-semibold">Credit (RM)</th></tr></thead><tbody>';
+  h+='<div class="bg-white rounded-xl border overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-3 py-2 text-left text-xs font-semibold">Code</th><th class="px-3 py-2 text-left text-xs font-semibold">Account</th><th class="px-3 py-2 text-left text-xs font-semibold">Description</th><th class="px-3 py-2 text-right text-xs font-semibold">Debit (RM)</th><th class="px-3 py-2 text-right text-xs font-semibold">Credit (RM)</th></tr></thead><tbody>';
   data.accounts.forEach(a=>{
     h+='<tr class="border-t hover:bg-gray-50"><td class="px-3 py-2 text-xs font-mono">'+a.code+'</td><td class="px-3 py-2 text-sm">'+a.name+'</td>';
+    h+='<td class="px-3 py-2 text-xs text-gray-500">'+(a.description||'')+'</td>';
     h+='<td class="px-3 py-2 text-right">'+(a.debit>0?fmt(a.debit):'-')+'</td><td class="px-3 py-2 text-right">'+(a.credit>0?fmt(a.credit):'-')+'</td></tr>';
   });
-  h+='<tr class="border-t-2 border-gray-800 font-bold bg-gray-50"><td class="px-3 py-3" colspan="2">TOTALS</td>';
+  h+='<tr class="border-t-2 border-gray-800 font-bold bg-gray-50"><td class="px-3 py-3" colspan="3">TOTALS</td>';
   h+='<td class="px-3 py-3 text-right">'+fmt(data.total_debit)+'</td><td class="px-3 py-3 text-right">'+fmt(data.total_credit)+'</td></tr>';
   h+='</tbody></table></div>';
   h+=renderPrintTB(data);
@@ -361,12 +634,12 @@ function renderPrintTB(data){
   h+='<div class="report-header"><p class="text-sm font-semibold">'+c.name+'</p><p class="text-xs">'+(c.address||'')+', '+(c.postcode||'')+' '+(c.city||'')+', '+(c.state||'Sabah')+'</p>';
   h+='<p class="text-xs">Reg No: '+(c.registration_no||'N/A')+' | TIN: '+(c.tin||'N/A')+'</p></div>';
   h+='<p class="report-title">Trial Balance</p><p class="report-subtitle">As at '+data.as_of_date+'</p>';
-  h+='<table class="w-full border-collapse mt-6"><thead><tr class="border-b-2 border-black"><th class="py-2 text-left text-xs">Code</th><th class="py-2 text-left text-xs">Account Name</th><th class="py-2 text-right text-xs">Debit (RM)</th><th class="py-2 text-right text-xs">Credit (RM)</th></tr></thead><tbody>';
+  h+='<table class="w-full border-collapse mt-6"><thead><tr class="border-b-2 border-black"><th class="py-2 text-left text-xs">Code</th><th class="py-2 text-left text-xs">Account Name</th><th class="py-2 text-left text-xs">Description</th><th class="py-2 text-right text-xs">Debit (RM)</th><th class="py-2 text-right text-xs">Credit (RM)</th></tr></thead><tbody>';
   data.accounts.forEach(a=>{
-    h+='<tr class="border-b"><td class="py-1 text-xs">'+a.code+'</td><td class="py-1 text-xs">'+a.name+'</td>';
+    h+='<tr class="border-b"><td class="py-1 text-xs">'+a.code+'</td><td class="py-1 text-xs">'+a.name+'</td><td class="py-1 text-xs">'+(a.description||'')+'</td>';
     h+='<td class="py-1 text-right text-xs">'+(a.debit>0?a.debit.toFixed(2):'')+'</td><td class="py-1 text-right text-xs">'+(a.credit>0?a.credit.toFixed(2):'')+'</td></tr>';
   });
-  h+='<tr class="border-t-2 border-black font-bold"><td class="py-2" colspan="2">TOTAL</td><td class="py-2 text-right">'+data.total_debit.toFixed(2)+'</td><td class="py-2 text-right">'+data.total_credit.toFixed(2)+'</td></tr>';
+  h+='<tr class="border-t-2 border-black font-bold"><td class="py-2" colspan="3">TOTAL</td><td class="py-2 text-right">'+data.total_debit.toFixed(2)+'</td><td class="py-2 text-right">'+data.total_credit.toFixed(2)+'</td></tr>';
   h+='</tbody></table>';
   h+='<div class="declaration-box mt-8"><p class="text-xs font-semibold mb-2">DECLARATION</p><p class="text-xs mb-4">We hereby declare that the above Trial Balance is correctly extracted from the books of accounts of '+c.name+' as at '+data.as_of_date+'.</p>';
   h+='<div class="flex justify-between"><div><p class="signature-line"></p><p class="text-xs mt-1">Prepared by (Accountant)</p><p class="text-xs">'+(c.accountant_name||'________________')+'</p></div>';
@@ -469,33 +742,6 @@ function renderZakat(){
   return h;
 }
 
-function renderSettings(){
-  const c=S.company||{};
-  let h='<div class="fade-in space-y-4"><h2 class="text-2xl font-bold">Company Settings</h2>';
-  h+='<div class="bg-white rounded-xl border p-6 space-y-4">';
-  h+='<h3 class="font-semibold text-gray-700">Company Information (LHDN Compliant)</h3>';
-  h+='<div class="grid grid-cols-1 md:grid-cols-2 gap-3">';
-  h+=input('Company Name','set-name',c.name);
-  h+=input('Registration No. (SSM)','set-reg',c.registration_no);
-  h+=input('TIN (Tax Identification No.)','set-tin',c.tin);
-  h+=input('BRN/IC','set-brn',c.brn_ic);
-  h+=input('MSIC Code','set-msic',c.msic_code);
-  h+=input('Phone','set-phone',c.phone);
-  h+=input('Email','set-email',c.email);
-  h+='<div class="md:col-span-2">'+input('Address','set-addr',c.address)+'</div>';
-  h+=input('City','set-city',c.city);
-  h+=input('State','set-state',c.state||'Sabah');
-  h+=input('Postcode','set-post',c.postcode);
-  h+=input('Director Name','set-director',c.director_name);
-  h+=input('Accountant Name','set-accountant',c.accountant_name);
-  h+='</div>';
-  h+='<button onclick="saveSettings()" class="w-full py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700">💾 Save Settings</button>';
-  h+='</div></div>';
-  return h;
-}
-
-function input(label,id,val){return '<div><label class="text-xs text-gray-500 mb-1 block">'+label+'</label><input id="'+id+'" value="'+(val||'')+'" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"></div>'}
-
 // Actions
 function nav(v){S.view=v;render()}
 
@@ -510,10 +756,6 @@ async function calcZakat(){
   el.innerHTML+='</div>';
 }
 
-async function saveSettings(){
-  showToast('Settings saved (demo mode)');
-}
-
 function showNewInvoice(){S.view='new-invoice';render()}
 function showNewJournal(){S.view='new-journal';render()}
 async function viewInvoice(id){const inv=await api('/api/invoices/'+id);S.currentInvoice=inv;S.view='view-invoice';render()}
@@ -521,8 +763,6 @@ async function viewInvoice(id){const inv=await api('/api/invoices/'+id);S.curren
 function printTB(){document.getElementById('print-tb').style.display='block';setTimeout(()=>{window.print();document.getElementById('print-tb').style.display='none'},100)}
 function printPL(){document.getElementById('print-pl').style.display='block';setTimeout(()=>{window.print();document.getElementById('print-pl').style.display='none'},100)}
 function printBS(){document.getElementById('print-bs').style.display='block';setTimeout(()=>{window.print();document.getElementById('print-bs').style.display='none'},100)}
-
-function showToast(msg){const t=document.createElement('div');t.className='fixed bottom-4 right-4 left-4 sm:left-auto sm:w-80 px-4 py-3 bg-green-500 text-white rounded-xl shadow-lg text-sm font-medium z-50 fade-in';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000)}
 
 init();
 </script>
