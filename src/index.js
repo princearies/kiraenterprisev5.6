@@ -14,6 +14,23 @@ export default {
       
       // API Routes
       if (path === '/api/health') return handleHealth(env);
+      
+      // Login endpoint (simple auth for now)
+      if (path === '/api/auth/login' && request.method === 'POST') {
+        const body = await request.json();
+        // For demo purposes, accept any login
+        return json({
+          token: 'demo-token-' + Date.now(),
+          user: {
+            id: 'user-001',
+            name: 'User',
+            email: body.email,
+            role: 'accountant_owner',
+            company_id: null
+          }
+        });
+      }
+      
       if (path === '/api/companies' && request.method === 'GET') return await getCompanies(env);
       if (path === '/api/companies' && request.method === 'POST') return await createCompany(request, env);
       if (path === '/api/invoices' && request.method === 'GET') return await getInvoices(request, env);

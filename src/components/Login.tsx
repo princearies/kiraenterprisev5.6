@@ -5,32 +5,29 @@ import api from '../services/api';
 
 export default function Login() {
   const { login } = useApp();
-  const [email, setEmail] = useState('ahmad@kiraenterprise.my');
-  const [password, setPassword] = useState('demo123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [apiMode, setApiMode] = useState(false);
-  const [apiError, setApiError] = useState('');
+  const [error, setError] = useState('');
+  const [apiStatus, setApiStatus] = useState<'checking' | 'connected' | 'offline'>('checking');
+
+  // Check API connection on mount
+  React.useEffect(() => {
+    api.healthCheck()
+      .then(() => setApiStatus('connected'))
+      .catch(() => setApiStatus('offline'));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setApiError('');
+    setError('');
 
-    if (apiMode) {
-      try {
-        await api.login(email, password);
-        login(email, password);
-      } catch (err: any) {
-        setApiError(err.message || 'API connection failed');
-        // Fall back to demo mode
-        setTimeout(() => login(email, password), 500);
-      }
-    } else {
-      // Demo mode - instant login
-      setTimeout(() => {
-        login(email, password);
-        setLoading(false);
-      }, 600);
+    try {
+      await login(email, password);
+    } catch (err: any) {
+      setError(err.message || 'Login failed');
+      setLoading(false);
     }
   };
 
@@ -51,6 +48,30 @@ export default function Login() {
         <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8">
           <h2 className="text-xl font-semibold text-gray-800 mb-1">Welcome Back</h2>
           <p className="text-gray-500 text-sm mb-6">Sign in to your workspace</p>
+
+          {/* API Status */}
+          <div className={`mb-4 p-3 rounded-xl flex items-center gap-2 ${
+            apiStatus === 'connected' ? 'bg-green-50 border border-green-200' :
+            apiStatus === 'offline' ? 'bg-amber-50 border border-amber-200' :
+            'bg-gray-50 border border-gray-200'
+          }`}>
+            {apiStatus === 'connected' ? (
+              <Wifi className="w-4 h-4 text-green-600" />
+            ) : apiStatus === 'offline' ? (
+              <WifiOff className="w-4 h-4 text-amber-600" />
+            ) : (
+              <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+            )}
+            <span className={`text-xs font-medium ${
+              apiStatus === 'connected' ? 'text-green-700' :
+              apiStatus === 'offline' ? 'text-amber-700' :
+              'text-gray-600'
+            }`}>
+              {apiStatus === 'connected' ? 'Connected to Cloud API (mykira DB)' :
+               apiStatus === 'offline' ? 'API Offline - Using Demo Mode' :
+               'Checking API connection...'}
+            </span>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -83,35 +104,10 @@ export default function Login() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" defaultChecked />
-                <span className="text-sm text-gray-600">Remember me</span>
-              </label>
-              <a href="#" className="text-sm text-primary-600 hover:text-primary-700 font-medium">Forgot?</a>
-            </div>
-
-            {/* API Mode Toggle */}
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-              <div className="flex items-center gap-2">
-                {apiMode ? <Wifi className="w-4 h-4 text-green-600" /> : <WifiOff className="w-4 h-4 text-gray-400" />}
-                <span className="text-xs text-gray-600">
-                  {apiMode ? 'Connected to Cloud API' : 'Demo Mode (Local Data)'}
-                </span>
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
+                <p className="text-sm text-red-700">{error}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setApiMode(!apiMode)}
-                className={`relative w-10 h-5 rounded-full transition-colors ${apiMode ? 'bg-green-500' : 'bg-gray-300'}`}
-              >
-                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${apiMode ? 'translate-x-5' : 'translate-x-0.5'}`} />
-              </button>
-            </div>
-
-            {apiError && (
-              <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded-lg">
-                ⚠️ {apiError} — Falling back to demo mode
-              </p>
             )}
 
             <button
@@ -132,9 +128,9 @@ export default function Login() {
 
           <div className="mt-6 pt-4 border-t border-gray-100">
             <p className="text-xs text-gray-400 text-center">
-              {apiMode 
-                ? 'API: kiraenterprisev5-6.mykira.workers.dev' 
-                : 'Demo: Use any email/password to login with local data'}
+              {apiStatus === 'connected' 
+                ? '🔗 Connected to: kiraenterprisev5-6.mykira.workers.dev' 
+                : '⚠️ Using local demo data - API not available'}
             </p>
           </div>
         </div>

@@ -9,8 +9,19 @@ import TransactionLedger from './components/TransactionLedger';
 import Settings from './components/Settings';
 
 function AppContent() {
-  const { isAuthenticated } = useApp();
+  const { isAuthenticated, loading } = useApp();
   const [currentPage, setCurrentPage] = useState('dashboard');
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-900 via-primary-800 to-primary-700 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-white text-sm">Loading KiraEnterprise...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <Login />;
