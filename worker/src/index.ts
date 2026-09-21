@@ -48,12 +48,37 @@ export default {
     const path = url.pathname;
 
     try {
+      // Root path - API info
+      if (path === '/' || path === '') {
+        return jsonResponse({
+          app: env.APP_NAME,
+          version: env.APP_VERSION,
+          status: 'running',
+          region: 'MY-SABAH',
+          endpoints: {
+            health: '/api/health',
+            login: 'POST /api/auth/login',
+            companies: '/api/companies',
+            invoices: '/api/invoices',
+            transactions: '/api/transactions',
+            einvoice: '/api/einvoice',
+            documents: '/api/documents',
+            settings: '/api/settings',
+          },
+          database: 'mykira (D1)',
+          note: 'R2 bucket pending - document upload stores metadata only',
+        });
+      }
+
       // Public routes
       if (path === '/api/health') {
         return jsonResponse({ status: 'ok', app: env.APP_NAME, version: env.APP_VERSION });
       }
 
-      if (path === '/api/auth/login' && request.method === 'POST') {
+      if (path === '/api/auth/login') {
+        if (request.method !== 'POST') {
+          return jsonResponse({ error: 'Method not allowed. Use POST with {email, password}' }, 405);
+        }
         return await handleLogin(request, env);
       }
 
@@ -81,6 +106,9 @@ export default {
       }
       if (path.startsWith('/api/settings')) {
         return await handleSettings(request, env, auth);
+      }
+      if (path === '/api/setup' && request.method === 'POST') {
+        return await handleSetup(env);
       }
 
       return jsonResponse({ error: 'Not Found' }, 404);
@@ -597,6 +625,57 @@ async function handleSettings(request: Request, env: Env, auth: JwtPayload): Pro
 
     default:
       return jsonResponse({ error: 'Method not allowed' }, 405);
+  }
+}
+
+// =============================================
+// SETUP / INITIALIZATION
+// =============================================
+
+async function handleSetup(env: Env): Promise<Response> {
+  try {
+    // Check if tables exist
+    const tablesCheck = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='companies'"
+    ).first();
+
+    if (!tablesCheck) {
+      return jsonResponse({ 
+        error: 'Database not initialized. Run: npx wrangler d1 execute mykira --file=schema.sql' 
+      }, 400);
+    }
+
+    // Create demo company
+    const companyId = crypto.randomUUID();
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO companies (id, name, registration_no, sst_no, tin, address, city, state, postcode, phone, email, financial_year_end, tax_rate, sst_rate)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      companyId, 'Sabah Maju Enterprise', 'SA1234567-X', 'B16-1906-32000045',
+      'C 1234567890', 'Lot 12, Block B, KK Times Square', 'Kota Kinabalu',
+      'Sabah', '88100', '+6088-123456', 'info@sabahmaju.my', '2025-12-31', 24, 6
+    ).run();
+
+    // Create demo user
+    const userId = crypto.randomUUID();
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO users (id, email, password_hash, name, role, company_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(
+      userId, 'demo@kiraenterprise.my', 'demo', 'Ahmad Razak', 'accountant_owner', companyId
+    ).run();
+
+    return jsonResponse({ 
+      success: true, 
+      message: 'Demo data created',
+      credentials: {
+        email: 'demo@kiraenterprise.my',
+        password: 'demo',
+      },
+      company_id: companyId,
+    });
+  } catch (error: any) {
+    return jsonResponse({ error: error.message }, 500);
   }
 }
 
