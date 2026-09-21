@@ -1,20 +1,37 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Lock, Mail, Building2, Shield } from 'lucide-react';
+import { Lock, Mail, Building2, Shield, Wifi, WifiOff } from 'lucide-react';
+import api from '../services/api';
 
 export default function Login() {
   const { login } = useApp();
   const [email, setEmail] = useState('ahmad@kiraenterprise.my');
   const [password, setPassword] = useState('demo123');
   const [loading, setLoading] = useState(false);
+  const [apiMode, setApiMode] = useState(false);
+  const [apiError, setApiError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
-      login(email, password);
-      setLoading(false);
-    }, 800);
+    setApiError('');
+
+    if (apiMode) {
+      try {
+        await api.login(email, password);
+        login(email, password);
+      } catch (err: any) {
+        setApiError(err.message || 'API connection failed');
+        // Fall back to demo mode
+        setTimeout(() => login(email, password), 500);
+      }
+    } else {
+      // Demo mode - instant login
+      setTimeout(() => {
+        login(email, password);
+        setLoading(false);
+      }, 600);
+    }
   };
 
   return (
@@ -74,6 +91,29 @@ export default function Login() {
               <a href="#" className="text-sm text-primary-600 hover:text-primary-700 font-medium">Forgot?</a>
             </div>
 
+            {/* API Mode Toggle */}
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+              <div className="flex items-center gap-2">
+                {apiMode ? <Wifi className="w-4 h-4 text-green-600" /> : <WifiOff className="w-4 h-4 text-gray-400" />}
+                <span className="text-xs text-gray-600">
+                  {apiMode ? 'Connected to Cloud API' : 'Demo Mode (Local Data)'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setApiMode(!apiMode)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${apiMode ? 'bg-green-500' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${apiMode ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+
+            {apiError && (
+              <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded-lg">
+                ⚠️ {apiError} — Falling back to demo mode
+              </p>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -92,7 +132,9 @@ export default function Login() {
 
           <div className="mt-6 pt-4 border-t border-gray-100">
             <p className="text-xs text-gray-400 text-center">
-              Demo: Use any email/password to login
+              {apiMode 
+                ? 'API: kiraenterprisev5-6.mykira.workers.dev' 
+                : 'Demo: Use any email/password to login with local data'}
             </p>
           </div>
         </div>
