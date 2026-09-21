@@ -15,18 +15,28 @@ export default {
       // API Routes
       if (path === '/api/health') return handleHealth(env);
       
-      // Login endpoint (simple auth for now)
+      // Login endpoint
       if (path === '/api/auth/login' && request.method === 'POST') {
         const body = await request.json();
-        // For demo purposes, accept any login
+        const user = await env.DB.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').bind(body.email).first();
+        
+        if (!user) {
+          return json({ error: 'User not found' }, 401);
+        }
+        
+        const validPassword = await verifyPassword(body.password, user.password_hash);
+        if (!validPassword) {
+          return json({ error: 'Invalid password' }, 401);
+        }
+        
         return json({
-          token: 'demo-token-' + Date.now(),
+          token: 'token-' + Date.now(),
           user: {
-            id: 'user-001',
-            name: 'User',
-            email: body.email,
-            role: 'accountant_owner',
-            company_id: null
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            company_id: user.company_id
           }
         });
       }
@@ -63,6 +73,7 @@ export default {
 // ============================================
 async function initDatabase(env) {
   const tables = [
+    `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE, password_hash TEXT, name TEXT, role TEXT DEFAULT 'client_staff', company_id TEXT, is_active INTEGER DEFAULT 1, created_at TEXT)`,
     `CREATE TABLE IF NOT EXISTS companies (id TEXT PRIMARY KEY, name TEXT, registration_no TEXT, tin TEXT, brn_ic TEXT, msic_code TEXT, address TEXT, city TEXT, state TEXT DEFAULT 'Sabah', postcode TEXT, phone TEXT, email TEXT, financial_year_end TEXT, tax_rate REAL DEFAULT 24, sst_rate REAL DEFAULT 6, director_name TEXT, accountant_name TEXT, is_active INTEGER DEFAULT 1)`,
     `CREATE TABLE IF NOT EXISTS invoices (id TEXT PRIMARY KEY, company_id TEXT, invoice_no TEXT, customer_name TEXT, customer_tin TEXT, customer_brn_ic TEXT, customer_msic TEXT, customer_address TEXT, customer_email TEXT, customer_phone TEXT, date TEXT, due_date TEXT, subtotal REAL, tax_amount REAL, discount REAL DEFAULT 0, grand_total REAL, status TEXT DEFAULT 'draft', notes TEXT, is_einvoice INTEGER DEFAULT 0, einvoice_category TEXT, revenue_account TEXT DEFAULT '4000', expense_account TEXT DEFAULT '5000', created_by TEXT, created_at TEXT, updated_at TEXT)`,
     `CREATE TABLE IF NOT EXISTS invoice_line_items (id TEXT PRIMARY KEY, invoice_id TEXT, description TEXT, quantity REAL, unit_price REAL, tax_rate REAL, amount REAL, tax_amount REAL, total REAL, account_code TEXT, sort_order INTEGER)`,
@@ -72,6 +83,20 @@ async function initDatabase(env) {
   ];
   
   for (const sql of tables) await env.DB.prepare(sql).run();
+  
+  // Create default admin user if not exists
+  const userCount = await env.DB.prepare('SELECT COUNT(*) as c FROM users').first();
+  if (userCount.c === 0) {
+    // Default credentials: admin@kiraenterprise.my / KiraAdmin2025!
+    const passwordHash = await hashPassword('KiraAdmin2025!');
+    await env.DB.prepare('INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), 'admin@kiraenterprise.my', passwordHash, 'Administrator', 'platform_admin', new Date().toISOString()).run();
+    
+    // Also create a demo accountant user
+    const accountantHash = await hashPassword('Accountant2025!');
+    await env.DB.prepare('INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), 'accountant@kiraenterprise.my', accountantHash, 'Ahmad Razak', 'accountant_owner', new Date().toISOString()).run();
+  }
   
   // Initialize comprehensive Chart of Accounts
   const count = await env.DB.prepare('SELECT COUNT(*) as c FROM chart_of_accounts').first();
@@ -234,6 +259,21 @@ async function initDatabase(env) {
 function cors() { return { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' }; }
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', ...cors() } }); }
 function handleHealth(env) { return json({ status: 'ok', app: env.APP_NAME, version: env.APP_VERSION, region: env.REGION }); }
+
+// Password hashing function
+async function hashPassword(password) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Verify password
+async function verifyPassword(password, hash) {
+  const hashed = await hashPassword(password);
+  return hashed === hash;
+}
 
 // ============================================
 // COMPANIES
