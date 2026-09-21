@@ -21,6 +21,7 @@ export default function Layout({ children, currentPage, onNavigate }: LayoutProp
     { id: 'einvoice', label: 'e-Invoice', icon: Receipt },
     { id: 'transactions', label: 'Transactions', icon: BookOpen },
     { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'admin', label: 'Admin Panel', icon: Shield },
   ];
 
   const roleLabels: Record<string, string> = {

@@ -241,6 +241,25 @@ class ApiService {
       body: JSON.stringify(data),
     });
   }
+
+  // Admin Functions
+  async executeAdminQuery(query: string) {
+    return this.request<any>('/api/admin/query', {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    });
+  }
+
+  async runMaintenanceTask(task: string) {
+    return this.request<any>('/api/admin/maintenance', {
+      method: 'POST',
+      body: JSON.stringify({ task }),
+    });
+  }
+
+  async exportDatabaseBackup() {
+    return this.request<any>('/api/admin/backup');
+  }
 }
 
 export const api = new ApiService();
