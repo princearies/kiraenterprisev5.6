@@ -20,6 +20,7 @@ export default function Layout({ children, currentPage, onNavigate }: LayoutProp
     { id: 'invoices', label: 'Invoices', icon: FileText },
     { id: 'einvoice', label: 'e-Invoice', icon: Receipt },
     { id: 'transactions', label: 'Transactions', icon: BookOpen },
+    { id: 'journals', label: 'Journals', icon: BookOpen },
     { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'admin', label: 'Admin Panel', icon: Shield },
   ];

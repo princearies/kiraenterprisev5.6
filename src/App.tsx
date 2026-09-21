@@ -6,6 +6,7 @@ import Dashboard from './components/Dashboard';
 import InvoiceBuilder from './components/InvoiceBuilder';
 import EInvoiceModule from './components/EInvoiceModule';
 import TransactionLedger from './components/TransactionLedger';
+import Journals from './components/Journals';
 import Settings from './components/Settings';
 import AdminPanel from './components/AdminPanel';
 
@@ -34,6 +35,7 @@ function AppContent() {
       case 'invoices': return <InvoiceBuilder />;
       case 'einvoice': return <EInvoiceModule />;
       case 'transactions': return <TransactionLedger />;
+      case 'journals': return <Journals />;
       case 'settings': return <Settings />;
       case 'admin': return <AdminPanel />;
       default: return <Dashboard />;
