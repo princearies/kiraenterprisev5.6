@@ -63,6 +63,11 @@ export default {
       if (path === '/api/balance-sheet') return await getBalanceSheet(request, env);
       if (path === '/api/zakat' && request.method === 'POST') return await calculateZakat(request, env);
       
+      // Admin Panel Endpoints
+      if (path === '/api/admin/query' && request.method === 'POST') return await handleAdminQuery(request, env);
+      if (path === '/api/admin/maintenance' && request.method === 'POST') return await handleMaintenance(request, env);
+      if (path === '/api/admin/backup' && request.method === 'GET') return await handleBackup(env);
+      
       return new Response(renderHTML(), { headers: { 'Content-Type': 'text/html; charset=utf-8', ...cors() } });
     } catch (err) { return json({ error: err.message }, 500); }
   }
@@ -460,6 +465,114 @@ async function calculateZakat(request, env) {
   const id = crypto.randomUUID(); const now = new Date().toISOString();
   await env.DB.prepare('INSERT INTO zakat_calculations (id,company_id,calculation_date,modal_kerja,kaedah_pertumbuhan,nisab,zakat_amount,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id,b.company_id,b.calculation_date||now.split('T')[0],modal,b.kaedah_pertumbuhan||0,nisab,zakat,b.notes||'',now).run();
   return json({ id, modal_kerja: modal, nisab, zakat_rate: 2.5, zakat_amount: zakat, eligible: modal >= nisab });
+}
+
+// ============================================
+// ADMIN PANEL FUNCTIONS
+// ============================================
+
+async function handleAdminQuery(request, env) {
+  const body = await request.json();
+  const query = body.query;
+  
+  if (!query || typeof query !== 'string') {
+    return json({ error: 'Invalid query' }, 400);
+  }
+  
+  // Security: Block dangerous operations
+  const dangerous = ['DROP TABLE', 'DELETE FROM users', 'TRUNCATE'];
+  const queryUpper = query.toUpperCase();
+  if (dangerous.some(d => queryUpper.includes(d))) {
+    return json({ error: 'Dangerous query blocked for security' }, 403);
+  }
+  
+  try {
+    // Check if it's a SELECT query
+    if (queryUpper.startsWith('SELECT')) {
+      const result = await env.DB.prepare(query).all();
+      return json({ results: result.results });
+    } else {
+      // For INSERT, UPDATE, DELETE
+      const result = await env.DB.prepare(query).run();
+      return json({ changes: result.meta.changes });
+    }
+  } catch (err) {
+    return json({ error: err.message }, 500);
+  }
+}
+
+async function handleMaintenance(request, env) {
+  const body = await request.json();
+  const task = body.task;
+  
+  try {
+    switch (task) {
+      case 'reinit-schema':
+        // Reinitialize all tables
+        const tables = [
+          `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE, password_hash TEXT, name TEXT, role TEXT DEFAULT 'client_staff', company_id TEXT, is_active INTEGER DEFAULT 1, created_at TEXT)`,
+          `CREATE TABLE IF NOT EXISTS companies (id TEXT PRIMARY KEY, name TEXT, registration_no TEXT, tin TEXT, brn_ic TEXT, msic_code TEXT, address TEXT, city TEXT, state TEXT DEFAULT 'Sabah', postcode TEXT, phone TEXT, email TEXT, financial_year_end TEXT, tax_rate REAL DEFAULT 24, sst_rate REAL DEFAULT 6, director_name TEXT, accountant_name TEXT, is_active INTEGER DEFAULT 1)`,
+          `CREATE TABLE IF NOT EXISTS invoices (id TEXT PRIMARY KEY, company_id TEXT, invoice_no TEXT, customer_name TEXT, customer_tin TEXT, customer_brn_ic TEXT, customer_msic TEXT, customer_address TEXT, customer_email TEXT, customer_phone TEXT, date TEXT, due_date TEXT, subtotal REAL, tax_amount REAL, discount REAL DEFAULT 0, grand_total REAL, status TEXT DEFAULT 'draft', notes TEXT, is_einvoice INTEGER DEFAULT 0, einvoice_category TEXT, revenue_account TEXT DEFAULT '4000', expense_account TEXT DEFAULT '5000', created_by TEXT, created_at TEXT, updated_at TEXT)`,
+          `CREATE TABLE IF NOT EXISTS invoice_line_items (id TEXT PRIMARY KEY, invoice_id TEXT, description TEXT, quantity REAL, unit_price REAL, tax_rate REAL, amount REAL, tax_amount REAL, total REAL, account_code TEXT, sort_order INTEGER)`,
+          `CREATE TABLE IF NOT EXISTS chart_of_accounts (code TEXT PRIMARY KEY, name TEXT, description TEXT, type TEXT, category TEXT, parent_code TEXT, is_active INTEGER DEFAULT 1, created_at TEXT)`,
+          `CREATE TABLE IF NOT EXISTS journal_entries (id TEXT PRIMARY KEY, date TEXT, description TEXT, reference TEXT, debit_account TEXT, credit_account TEXT, amount REAL, auto_posted INTEGER DEFAULT 0, invoice_id TEXT, created_by TEXT, created_at TEXT)`,
+          `CREATE TABLE IF NOT EXISTS zakat_calculations (id TEXT PRIMARY KEY, company_id TEXT, calculation_date TEXT, modal_kerja REAL, kaedah_pertumbuhan REAL, nisab REAL, zakat_amount REAL, notes TEXT, created_at TEXT)`
+        ];
+        for (const sql of tables) await env.DB.prepare(sql).run();
+        return json({ message: 'Schema reinitialized successfully' });
+        
+      case 'reset-coa':
+        // Reset chart of accounts
+        await env.DB.prepare('DELETE FROM chart_of_accounts').run();
+        // Reinitialize with default accounts (same logic as initDatabase)
+        await initDatabase(env);
+        return json({ message: 'Chart of accounts reset successfully' });
+        
+      case 'clear-test-data':
+        // Clear all transaction data
+        await env.DB.prepare('DELETE FROM invoice_line_items').run();
+        await env.DB.prepare('DELETE FROM invoices').run();
+        await env.DB.prepare('DELETE FROM journal_entries').run();
+        await env.DB.prepare('DELETE FROM zakat_calculations').run();
+        return json({ message: 'Test data cleared successfully' });
+        
+      case 'optimize':
+        // Run VACUUM (SQLite optimization)
+        await env.DB.prepare('VACUUM').run();
+        return json({ message: 'Database optimized successfully' });
+        
+      default:
+        return json({ error: 'Unknown maintenance task' }, 400);
+    }
+  } catch (err) {
+    return json({ error: err.message }, 500);
+  }
+}
+
+async function handleBackup(env) {
+  try {
+    // Export all data
+    const companies = await env.DB.prepare('SELECT * FROM companies').all();
+    const users = await env.DB.prepare('SELECT * FROM users').all();
+    const invoices = await env.DB.prepare('SELECT * FROM invoices').all();
+    const accounts = await env.DB.prepare('SELECT * FROM chart_of_accounts').all();
+    const journal = await env.DB.prepare('SELECT * FROM journal_entries').all();
+    const zakat = await env.DB.prepare('SELECT * FROM zakat_calculations').all();
+    
+    return json({
+      exported_at: new Date().toISOString(),
+      data: {
+        companies: companies.results,
+        users: users.results,
+        invoices: invoices.results,
+        chart_of_accounts: accounts.results,
+        journal_entries: journal.results,
+        zakat_calculations: zakat.results
+      }
+    });
+  } catch (err) {
+    return json({ error: err.message }, 500);
+  }
 }
 
 // ============================================
