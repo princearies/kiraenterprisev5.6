@@ -49,6 +49,7 @@ export default {
       if (path.match(/^\/api\/invoices\/[^/]+$/) && request.method === 'DELETE') return await deleteInvoice(path, env);
       if (path === '/api/journal' && request.method === 'GET') return await getJournal(request, env);
       if (path === '/api/journal' && request.method === 'POST') return await createJournalEntry(request, env);
+      if (path === '/api/journals' && request.method === 'GET') return await getJournals(request, env);
       if (path === '/api/ledger' && request.method === 'GET') return await getLedger(request, env);
       
       // Chart of Accounts API
@@ -83,7 +84,7 @@ async function initDatabase(env) {
     `CREATE TABLE IF NOT EXISTS invoices (id TEXT PRIMARY KEY, company_id TEXT, invoice_no TEXT, customer_name TEXT, customer_tin TEXT, customer_brn_ic TEXT, customer_msic TEXT, customer_address TEXT, customer_email TEXT, customer_phone TEXT, date TEXT, due_date TEXT, subtotal REAL, tax_amount REAL, discount REAL DEFAULT 0, grand_total REAL, status TEXT DEFAULT 'draft', notes TEXT, is_einvoice INTEGER DEFAULT 0, einvoice_category TEXT, revenue_account TEXT DEFAULT '4000', expense_account TEXT DEFAULT '5000', created_by TEXT, created_at TEXT, updated_at TEXT)`,
     `CREATE TABLE IF NOT EXISTS invoice_line_items (id TEXT PRIMARY KEY, invoice_id TEXT, description TEXT, quantity REAL, unit_price REAL, tax_rate REAL, amount REAL, tax_amount REAL, total REAL, account_code TEXT, sort_order INTEGER)`,
     `CREATE TABLE IF NOT EXISTS chart_of_accounts (code TEXT PRIMARY KEY, name TEXT, description TEXT, type TEXT, category TEXT, parent_code TEXT, is_active INTEGER DEFAULT 1, created_at TEXT)`,
-    `CREATE TABLE IF NOT EXISTS journal_entries (id TEXT PRIMARY KEY, date TEXT, description TEXT, reference TEXT, debit_account TEXT, credit_account TEXT, amount REAL, auto_posted INTEGER DEFAULT 0, invoice_id TEXT, created_by TEXT, created_at TEXT)`,
+    `CREATE TABLE IF NOT EXISTS journal_entries (id TEXT PRIMARY KEY, company_id TEXT, date TEXT, description TEXT, reference TEXT, lines TEXT, total_debit REAL DEFAULT 0, total_credit REAL DEFAULT 0, auto_posted INTEGER DEFAULT 0, invoice_id TEXT, created_by TEXT, created_at TEXT)`,
     `CREATE TABLE IF NOT EXISTS zakat_calculations (id TEXT PRIMARY KEY, company_id TEXT, calculation_date TEXT, modal_kerja REAL, kaedah_pertumbuhan REAL, nisab REAL, zakat_amount REAL, notes TEXT, created_at TEXT)`
   ];
   
@@ -403,10 +404,90 @@ async function getJournal(request, env) {
   return json(results);
 }
 
+async function getJournals(request, env) {
+  const url = new URL(request.url);
+  const companyId = url.searchParams.get('company_id');
+  
+  let query = 'SELECT * FROM journal_entries';
+  const params = [];
+  
+  if (companyId) {
+    query += ' WHERE company_id = ?';
+    params.push(companyId);
+  }
+  
+  query += ' ORDER BY date DESC, created_at DESC';
+  
+  const stmt = env.DB.prepare(query);
+  const { results } = params.length > 0 
+    ? await stmt.bind(...params).all() 
+    : await stmt.all();
+  
+  // Parse the lines JSON column for each entry
+  const journals = results.map(entry => {
+    let lines = [];
+    try {
+      if (entry.lines) {
+        lines = JSON.parse(entry.lines);
+      }
+    } catch (e) {
+      console.error('Error parsing lines for journal entry', entry.id, e);
+      lines = [];
+    }
+    
+    return {
+      ...entry,
+      lines: lines
+    };
+  });
+  
+  return json(journals);
+}
+
 async function createJournalEntry(request, env) {
-  const b = await request.json(); const id = crypto.randomUUID(); const now = new Date().toISOString();
-  await env.DB.prepare('INSERT INTO journal_entries (id,date,description,reference,debit_account,credit_account,amount,auto_posted,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(id,b.date,b.description,b.reference,b.debit_account,b.credit_account,b.amount,0,'manual',now).run();
-  return json({ id }, 201);
+  const b = await request.json(); 
+  const id = crypto.randomUUID(); 
+  const now = new Date().toISOString();
+  
+  // Calculate totals from lines if provided
+  let totalDebit = 0;
+  let totalCredit = 0;
+  let linesJson = '[]';
+  
+  if (b.lines && Array.isArray(b.lines)) {
+    b.lines.forEach(line => {
+      totalDebit += parseFloat(line.debit || 0);
+      totalCredit += parseFloat(line.credit || 0);
+    });
+    linesJson = JSON.stringify(b.lines);
+  } else if (b.debit_account && b.credit_account && b.amount) {
+    // Legacy format - convert to lines format
+    const lines = [
+      {
+        account_code: b.debit_account,
+        account_name: b.debit_name || '',
+        description: b.description || '',
+        debit: parseFloat(b.amount),
+        credit: 0
+      },
+      {
+        account_code: b.credit_account,
+        account_name: b.credit_name || '',
+        description: b.description || '',
+        debit: 0,
+        credit: parseFloat(b.amount)
+      }
+    ];
+    linesJson = JSON.stringify(lines);
+    totalDebit = parseFloat(b.amount);
+    totalCredit = parseFloat(b.amount);
+  }
+  
+  await env.DB.prepare('INSERT INTO journal_entries (id,company_id,date,description,reference,lines,total_debit,total_credit,auto_posted,invoice_id,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+    .bind(id, b.company_id || null, b.date, b.description, b.reference || '', linesJson, totalDebit, totalCredit, 0, b.invoice_id || null, b.created_by || 'manual', now)
+    .run();
+  
+  return json({ id, total_debit: totalDebit, total_credit: totalCredit }, 201);
 }
 
 async function getLedger(request, env) {

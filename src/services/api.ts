@@ -150,6 +150,14 @@ class ApiService {
     return this.request<any[]>(`/api/journal${query ? '?' + query : ''}`);
   }
 
+  async getJournals(filters?: { company_id?: string }) {
+    const params = new URLSearchParams();
+    if (filters?.company_id) params.append('company_id', filters.company_id);
+    
+    const query = params.toString();
+    return this.request<any[]>(`/api/journals${query ? '?' + query : ''}`);
+  }
+
   async createJournalEntry(data: any) {
     return this.request<any>('/api/journal', {
       method: 'POST',
