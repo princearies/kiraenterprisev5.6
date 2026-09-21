@@ -1,4 +1,4 @@
-name = "kiraenterprise-api"
+name = "kiraenterprisev5-6"
 main = "worker/src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
@@ -9,10 +9,13 @@ binding = "DB"
 database_name = "mykira"
 database_id = "4037f2cd-0c4a-4251-846e-534eb7b47338"
 
-# Cloudflare R2 Bucket for document/receipt storage
-[[r2_buckets]]
-binding = "BUCKET"
-bucket_name = "kiraenterprise-documents"
+# NOTE: R2 Bucket binding removed - bucket 'kiraenterprise-documents' not yet created.
+# To enable document storage, create the bucket first:
+#   npx wrangler r2 bucket create kiraenterprise-documents
+# Then uncomment the following:
+# [[r2_buckets]]
+# binding = "BUCKET"
+# bucket_name = "kiraenterprise-documents"
 
 # Environment Variables
 [vars]

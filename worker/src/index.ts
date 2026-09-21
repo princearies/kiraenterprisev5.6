@@ -1,6 +1,6 @@
 /**
  * KiraEnterprise v5.6 - Cloudflare Worker API
- * Backend: Cloudflare Workers + D1 (mykira) + R2
+ * Backend: Cloudflare Workers + D1 (mykira)
  * 
  * This is the production-ready backend API that handles:
  * - Authentication & JWT verification
@@ -8,12 +8,13 @@
  * - Invoice CRUD with prepared statements
  * - Transaction recording (double-entry)
  * - e-Invoice data generation for LHDN
- * - Document upload to R2
+ * 
+ * NOTE: R2 bucket not yet provisioned. Document upload returns metadata only.
+ * To enable R2: Create bucket 'kiraenterprise-documents' and add binding to wrangler.toml
  */
 
 export interface Env {
   DB: D1Database;
-  BUCKET: R2Bucket;
   JWT_SECRET: string;
   LHDN_API_KEY: string;
   LHDN_CLIENT_ID: string;
@@ -107,7 +108,6 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
   }
 
   // Verify password (in production, use bcrypt/argon2)
-  // For demo purposes, simplified check
   const passwordValid = await verifyPassword(password, (user as any).password_hash);
   if (!passwordValid) {
     return jsonResponse({ error: 'Invalid credentials' }, 401);
@@ -508,7 +508,7 @@ async function handleEInvoice(request: Request, env: Env, auth: JwtPayload): Pro
 }
 
 // =============================================
-// DOCUMENTS (R2)
+// DOCUMENTS (Metadata only - R2 not yet provisioned)
 // =============================================
 
 async function handleDocuments(request: Request, env: Env, auth: JwtPayload): Promise<Response> {
@@ -521,30 +521,28 @@ async function handleDocuments(request: Request, env: Env, auth: JwtPayload): Pr
 
   switch (method) {
     case 'POST': {
-      const formData = await request.formData();
-      const file = formData.get('file') as File;
-      const invoiceId = formData.get('invoice_id') as string;
-
-      if (!file) return jsonResponse({ error: 'No file provided' }, 400);
-
-      const r2Key = `${companyId}/${crypto.randomUUID()}/${file.name}`;
-      
-      // Upload to R2
-      await env.BUCKET.put(r2Key, file.stream(), {
-        httpMetadata: { contentType: file.type },
-      });
-
-      // Save metadata to D1
+      // R2 bucket not yet provisioned - store metadata only
+      const body = await request.json();
       const docId = crypto.randomUUID();
+      
       await env.DB.prepare(`
         INSERT INTO documents (id, company_id, user_id, filename, original_name, mime_type, size_bytes, r2_key, category, related_invoice_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
-        docId, companyId, auth.userId, r2Key, file.name,
-        file.type, file.size, r2Key, 'receipt', invoiceId || null
+        docId, companyId, auth.userId, body.filename || 'document',
+        body.original_name || body.filename || 'document',
+        body.mime_type || 'application/octet-stream',
+        body.size_bytes || 0,
+        `pending/${companyId}/${docId}`,
+        body.category || 'receipt',
+        body.invoice_id || null
       ).run();
 
-      return jsonResponse({ id: docId, r2_key: r2Key }, 201);
+      return jsonResponse({ 
+        id: docId, 
+        status: 'metadata_saved',
+        message: 'R2 bucket not yet provisioned. Document metadata saved. File upload will be available once R2 is configured.'
+      }, 201);
     }
 
     case 'GET': {
