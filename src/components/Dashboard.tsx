@@ -2,7 +2,7 @@ import React from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   DollarSign, FileText, TrendingUp, AlertCircle, Clock, 
-  ArrowUpRight, ArrowDownRight, Calendar
+  ArrowUpRight, ArrowDownRight, Calendar, Building2
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -11,6 +11,30 @@ export default function Dashboard() {
 
   const companyInvoices = invoices.filter(i => i.company_id === activeCompany?.id);
   const companyTransactions = transactions.filter(t => t.company_id === activeCompany?.id);
+
+  // Show message if no data from API
+  if (invoices.length === 0 && !activeCompany) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
+          <p className="text-sm text-gray-500 mt-1">Welcome to KiraEnterprise v5.6</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
+          <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Building2 className="w-8 h-8 text-primary-600" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-800 mb-2">No Company Data Found</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Connect to the API to load your company data from the mykira database.
+          </p>
+          <p className="text-xs text-gray-400">
+            API: https://kiraenterprisev5-6.mykira.workers.dev/
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-MY', { style: 'currency', currency: 'MYR' }).format(amount);

@@ -1,6 +1,7 @@
 /**
  * KiraEnterprise API Service
  * Connects frontend to Cloudflare Worker backend
+ * Database: mykira (D1) - Real data from Cloudflare Workers
  */
 
 const API_BASE_URL = 'https://kiraenterprisev5-6.mykira.workers.dev';
@@ -9,7 +10,6 @@ class ApiService {
   private token: string | null = null;
 
   constructor() {
-    // Load token from localStorage
     this.token = localStorage.getItem('kira_token');
   }
 
@@ -28,11 +28,16 @@ class ApiService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json().catch(() => ({ error: 'API request failed' }));
       throw new Error(error.error || 'API request failed');
     }
 
     return response.json();
+  }
+
+  // Generic GET method
+  async get<T = any>(endpoint: string): Promise<T> {
+    return this.request<T>(endpoint);
   }
 
   // Authentication
@@ -62,6 +67,11 @@ class ApiService {
   getUser() {
     const userStr = localStorage.getItem('kira_user');
     return userStr ? JSON.parse(userStr) : null;
+  }
+
+  // Health Check
+  async healthCheck() {
+    return this.request<any>('/api/health');
   }
 
   // Companies
@@ -95,7 +105,8 @@ class ApiService {
     if (filters?.date_from) params.append('date_from', filters.date_from);
     if (filters?.date_to) params.append('date_to', filters.date_to);
     
-    return this.request<any[]>(`/api/invoices?${params.toString()}`);
+    const query = params.toString();
+    return this.request<any[]>(`/api/invoices${query ? '?' + query : ''}`);
   }
 
   async getInvoice(id: string, companyId?: string) {
@@ -124,6 +135,52 @@ class ApiService {
     });
   }
 
+  // Chart of Accounts
+  async getAccounts() {
+    return this.request<any[]>('/api/accounts');
+  }
+
+  // Journal & Ledger
+  async getJournal(filters?: { from?: string; to?: string }) {
+    const params = new URLSearchParams();
+    if (filters?.from) params.append('from', filters.from);
+    if (filters?.to) params.append('to', filters.to);
+    
+    const query = params.toString();
+    return this.request<any[]>(`/api/journal${query ? '?' + query : ''}`);
+  }
+
+  async createJournalEntry(data: any) {
+    return this.request<any>('/api/journal', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getLedger(accountCode: string) {
+    return this.request<any>(`/api/ledger?account=${accountCode}`);
+  }
+
+  // Financial Reports
+  async getTrialBalance(date?: string) {
+    const params = date ? `?date=${date}` : '';
+    return this.request<any>(`/api/trial-balance${params}`);
+  }
+
+  async getProfitLoss(from?: string, to?: string) {
+    const params = new URLSearchParams();
+    if (from) params.append('from', from);
+    if (to) params.append('to', to);
+    
+    const query = params.toString();
+    return this.request<any>(`/api/profit-loss${query ? '?' + query : ''}`);
+  }
+
+  async getBalanceSheet(date?: string) {
+    const params = date ? `?date=${date}` : '';
+    return this.request<any>(`/api/balance-sheet${params}`);
+  }
+
   // Transactions
   async getTransactions(companyId?: string, filters?: { type?: string; category?: string; date_from?: string; date_to?: string }) {
     const params = new URLSearchParams();
@@ -133,7 +190,8 @@ class ApiService {
     if (filters?.date_from) params.append('date_from', filters.date_from);
     if (filters?.date_to) params.append('date_to', filters.date_to);
     
-    return this.request<any[]>(`/api/transactions?${params.toString()}`);
+    const query = params.toString();
+    return this.request<any[]>(`/api/transactions${query ? '?' + query : ''}`);
   }
 
   async createTransaction(data: any) {
@@ -147,6 +205,14 @@ class ApiService {
   async getEInvoiceData(companyId?: string) {
     const params = companyId ? `?company_id=${companyId}` : '';
     return this.request<any>(`/api/einvoice${params}`);
+  }
+
+  // Zakat
+  async calculateZakat(data: any) {
+    return this.request<any>('/api/zakat', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   // Documents
@@ -174,11 +240,6 @@ class ApiService {
       method: 'PUT',
       body: JSON.stringify(data),
     });
-  }
-
-  // Health Check
-  async healthCheck() {
-    return this.request<any>('/api/health');
   }
 }
 
