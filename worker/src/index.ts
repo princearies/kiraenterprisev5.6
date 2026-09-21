@@ -82,6 +82,11 @@ export default {
         return await handleLogin(request, env);
       }
 
+      // Public setup route (for initial database initialization)
+      if (path === '/api/setup' && request.method === 'POST') {
+        return await handleSetup(env);
+      }
+
       // Protected routes - verify JWT
       const auth = await verifyAuth(request, env);
       if (!auth) {
@@ -106,9 +111,6 @@ export default {
       }
       if (path.startsWith('/api/settings')) {
         return await handleSettings(request, env, auth);
-      }
-      if (path === '/api/setup' && request.method === 'POST') {
-        return await handleSetup(env);
       }
 
       return jsonResponse({ error: 'Not Found' }, 404);
