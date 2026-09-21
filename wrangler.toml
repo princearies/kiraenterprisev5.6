@@ -1,0 +1,28 @@
+name = "kiraenterprise-api"
+main = "worker/src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cloudflare D1 Database Binding
+[[d1_databases]]
+binding = "DB"
+database_name = "mykira"
+database_id = "4037f2cd-0c4a-4251-846e-534eb7b47338"
+
+# Cloudflare R2 Bucket for document/receipt storage
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "kiraenterprise-documents"
+
+# Environment Variables
+[vars]
+APP_NAME = "KiraEnterprise"
+APP_VERSION = "5.6"
+ENVIRONMENT = "production"
+REGION = "MY-SABAH"
+
+# Secrets (set via wrangler secret put)
+# JWT_SECRET
+# LHDN_API_KEY
+# LHDN_CLIENT_ID
+# LHDN_CLIENT_SECRET
