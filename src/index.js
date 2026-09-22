@@ -77,7 +77,9 @@ export default {
 // ============================================
 // DATABASE INITIALIZATION
 // ============================================
+let __dbReady = false;
 async function initDatabase(env) {
+  if (__dbReady) return;
   const tables = [
     `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE, password_hash TEXT, name TEXT, role TEXT DEFAULT 'client_staff', company_id TEXT, is_active INTEGER DEFAULT 1, created_at TEXT)`,
     `CREATE TABLE IF NOT EXISTS companies (id TEXT PRIMARY KEY, name TEXT, registration_no TEXT, tin TEXT, brn_ic TEXT, msic_code TEXT, address TEXT, city TEXT, state TEXT DEFAULT 'Sabah', postcode TEXT, phone TEXT, email TEXT, financial_year_end TEXT, tax_rate REAL DEFAULT 24, sst_rate REAL DEFAULT 6, director_name TEXT, accountant_name TEXT, is_active INTEGER DEFAULT 1)`,
@@ -708,7 +710,10 @@ async function renderShell(){
   let h='<header class="bg-white border-b border-gray-200 sticky top-0 z-40 no-print">';
   h+='<div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">';
   h+='<div class="flex items-center gap-3"><div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">K</div>';
-  h+='<div><h1 class="font-bold text-gray-800">KiraEnterprise v5.6</h1><p class="text-xs text-gray-500">'+(S.company?S.company.name:'Malaysian Accounting Suite')+'</p></div></div></div>';
+  h+='<div><h1 class="font-bold text-gray-800">KiraEnterprise v5.6</h1><p class="text-xs text-gray-500">'+(S.company?S.company.name:'Malaysian Accounting Suite')+'</p></div>';
+  h+='<select onchange="switchCompany(this.value)" class="text-xs border rounded-lg px-2 py-1">';
+  S.companies.forEach(function(c){h+='<option value="'+c.id+'" '+(S.company&&S.company.id===c.id?'selected':'')+'>'+c.name+'</option>'});
+  h+='</select></div>';
   h+='<nav class="max-w-7xl mx-auto px-4 pb-2 flex gap-1 overflow-x-auto text-xs">';
   const tabs=[['dashboard','📊 Dashboard'],['invoices','📄 Invoices'],['accounts','📋 Chart of Accounts'],['journal','📖 Journal'],['ledger','📒 Ledger'],['trial-balance','⚖️ Trial Balance'],['profit-loss','💰 P&L'],['balance-sheet','📊 Balance Sheet'],['zakat','🕌 Zakat']];
   tabs.forEach(([id,l])=>{h+='<button onclick="nav(\\''+id+'\\')" class="px-3 py-1.5 rounded-lg font-medium whitespace-nowrap '+(S.view===id?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200')+'">'+l+'</button>'});
@@ -997,6 +1002,12 @@ function renderZakat(){
 function nav(v){
   S.view=v;
   render()
+}
+
+async function switchCompany(companyId){
+  S.company = S.companies.find(function(c){return c.id===companyId});
+  S.invoices = await api('/api/invoices?company_id='+companyId);
+  render();
 }
 
 async function calcZakat(){
