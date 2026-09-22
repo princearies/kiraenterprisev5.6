@@ -994,7 +994,14 @@ function renderZakat(){
 }
 
 // Actions
-function nav(v){S.view=v;render()}
+function nav(v){
+  if(v === 'dashboard') {
+    window.location.href = 'https://kiraenterprise5-6.pages.dev/';
+    return;
+  }
+  S.view=v;
+  render()
+}
 
 async function calcZakat(){
   const modal=parseFloat(document.getElementById('zakat-modal').value)||0;
