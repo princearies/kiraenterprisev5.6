@@ -7,6 +7,10 @@ import InvoiceBuilder from './components/InvoiceBuilder';
 import EInvoiceModule from './components/EInvoiceModule';
 import TransactionLedger from './components/TransactionLedger';
 import Journals from './components/Journals';
+import Ledger from './components/Ledger';
+import TrialBalance from './components/TrialBalance';
+import ProfitLoss from './components/ProfitLoss';
+import BalanceSheet from './components/BalanceSheet';
 import Settings from './components/Settings';
 import AdminPanel from './components/AdminPanel';
 
@@ -40,6 +44,10 @@ function AppContent() {
       case 'einvoice': return <EInvoiceModule />;
       case 'transactions': return <TransactionLedger />;
       case 'journals': return <Journals />;
+      case 'ledger': return <Ledger />;
+      case 'trial-balance': return <TrialBalance />;
+      case 'profit-loss': return <ProfitLoss />;
+      case 'balance-sheet': return <BalanceSheet />;
       case 'settings': return <Settings />;
       case 'admin': return <AdminPanel />;
       default: return <Dashboard />;
