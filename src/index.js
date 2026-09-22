@@ -702,9 +702,9 @@ async function init(){
   render();
 }
 
-function render(){document.getElementById('app').innerHTML=renderShell()}
+async function render(){document.getElementById('app').innerHTML=await renderShell()}
 
-function renderShell(){
+async function renderShell(){
   let h='<header class="bg-white border-b border-gray-200 sticky top-0 z-40 no-print">';
   h+='<div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">';
   h+='<div class="flex items-center gap-3"><div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">K</div>';
@@ -713,7 +713,7 @@ function renderShell(){
   const tabs=[['dashboard','📊 Dashboard'],['invoices','📄 Invoices'],['accounts','📋 Chart of Accounts'],['journal','📖 Journal'],['ledger','📒 Ledger'],['trial-balance','⚖️ Trial Balance'],['profit-loss','💰 P&L'],['balance-sheet','📊 Balance Sheet'],['zakat','🕌 Zakat']];
   tabs.forEach(([id,l])=>{h+='<button onclick="nav(\\''+id+'\\')" class="px-3 py-1.5 rounded-lg font-medium whitespace-nowrap '+(S.view===id?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200')+'">'+l+'</button>'});
   h+='</nav></header>';
-  h+='<main class="max-w-7xl mx-auto px-4 py-4 pb-20">'+renderView()+'</main>';
+  h+='<main class="max-w-7xl mx-auto px-4 py-4 pb-20">'+await renderView()+'</main>';
   h+='<div class="no-print max-w-7xl mx-auto px-4 pb-6"><div class="bg-amber-50 border border-amber-200 rounded-xl p-3"><p class="text-amber-800 text-xs"><strong>⚠️ Disclaimer:</strong> KiraEnterprise helps organize data for tax/e-Invoice purposes. It does not guarantee full LHDN compliance. Final review by a qualified accountant is required.</p></div></div>';
   return h;
 }
@@ -995,10 +995,6 @@ function renderZakat(){
 
 // Actions
 function nav(v){
-  if(v === 'dashboard') {
-    window.location.href = 'https://kiraenterprise5-6.pages.dev/';
-    return;
-  }
   S.view=v;
   render()
 }
