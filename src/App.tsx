@@ -30,6 +30,10 @@ function AppContent() {
   }
 
   const renderPage = () => {
+    if (currentPage === 'worker') {
+      window.location.href = 'https://kiraenterprisev5-6.mykira.workers.dev/';
+      return null;
+    }
     switch (currentPage) {
       case 'dashboard': return <Dashboard />;
       case 'invoices': return <InvoiceBuilder />;

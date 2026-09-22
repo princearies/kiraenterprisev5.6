@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   LayoutDashboard, FileText, Receipt, BookOpen, Settings, LogOut, 
-  Menu, X, ChevronDown, Building2, Users, Shield, Menu as MenuIcon
+  Menu, X, ChevronDown, Building2, Users, Shield, Menu as MenuIcon,
+  Scale, TrendingUp, Table
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -21,6 +22,7 @@ export default function Layout({ children, currentPage, onNavigate }: LayoutProp
     { id: 'einvoice', label: 'e-Invoice', icon: Receipt },
     { id: 'transactions', label: 'Transactions', icon: BookOpen },
     { id: 'journals', label: 'Journals', icon: BookOpen },
+    { id: 'worker', label: 'Worker Backend', icon: Shield },
     { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'admin', label: 'Admin Panel', icon: Shield },
   ];
