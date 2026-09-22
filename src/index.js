@@ -397,8 +397,9 @@ async function deleteAccount(path, env) {
 // ============================================
 async function getJournal(request, env) {
   const url = new URL(request.url);
-  const from = url.searchParams.get('from'); const to = url.searchParams.get('to');
+  const from = url.searchParams.get('from'); const to = url.searchParams.get('to'); const companyId = url.searchParams.get('company_id');
   let q = 'SELECT j.*, c1.name as debit_name, c2.name as credit_name FROM journal_entries j LEFT JOIN chart_of_accounts c1 ON j.debit_account=c1.code LEFT JOIN chart_of_accounts c2 ON j.credit_account=c2.code WHERE 1=1'; const p = [];
+  if (companyId) { q += ' AND j.company_id = ?'; p.push(companyId); }
   if (from) { q += ' AND j.date >= ?'; p.push(from); }
   if (to) { q += ' AND j.date <= ?'; p.push(to); }
   q += ' ORDER BY j.date DESC, j.created_at DESC';
@@ -821,7 +822,7 @@ function renderInvoices(){
 }
 
 async function renderJournal(){
-  S.journal=await api('/api/journal');
+  S.journal=await api('/api/journal?company_id='+(S.company?S.company.id:''));
   let h='<div class="fade-in space-y-4"><div class="flex justify-between items-center"><h2 class="text-2xl font-bold">General Journal</h2>';
   h+='<button onclick="showNewJournal()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700">+ New Entry</button></div>';
   h+='<div class="bg-white rounded-xl border overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr>';
@@ -1007,6 +1008,7 @@ function nav(v){
 async function switchCompany(companyId){
   S.company = S.companies.find(function(c){return c.id===companyId});
   S.invoices = await api('/api/invoices?company_id='+companyId);
+  S.journal = await api('/api/journal?company_id='+companyId);
   render();
 }
 
