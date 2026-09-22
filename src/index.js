@@ -495,10 +495,15 @@ async function createJournalEntry(request, env) {
 
 async function getLedger(request, env) {
   const url = new URL(request.url);
+  const companyId = url.searchParams.get('company_id');
   const code = url.searchParams.get('account');
   if (!code) return json({ error: 'Account code required' }, 400);
   const account = await env.DB.prepare('SELECT * FROM chart_of_accounts WHERE code = ?').bind(code).first();
-  const { results: entries } = await env.DB.prepare('SELECT j.*, CASE WHEN j.debit_account=? THEN j.amount ELSE 0 END as debit, CASE WHEN j.credit_account=? THEN j.amount ELSE 0 END as credit FROM journal_entries j WHERE j.debit_account=? OR j.credit_account=? ORDER BY j.date ASC').bind(code,code,code,code).all();
+  let q = 'SELECT j.*, CASE WHEN j.debit_account=? THEN j.amount ELSE 0 END as debit, CASE WHEN j.credit_account=? THEN j.amount ELSE 0 END as credit FROM journal_entries j WHERE j.debit_account=? OR j.credit_account=?';
+  const p = [code, code, code, code];
+  if (companyId) { q += ' AND j.company_id = ?'; p.push(companyId); }
+  q += ' ORDER BY j.date ASC';
+  const { results: entries } = await env.DB.prepare(q).bind(...p).all();
   let balance = 0;
   const withBal = entries.map(e => {
     if (account.type==='asset'||account.type==='expense') balance += e.debit - e.credit;
@@ -513,11 +518,15 @@ async function getLedger(request, env) {
 // ============================================
 async function getTrialBalance(request, env) {
   const url = new URL(request.url);
+  const companyId = url.searchParams.get('company_id');
   const asOf = url.searchParams.get('date') || new Date().toISOString().split('T')[0];
   const { results: accounts } = await env.DB.prepare('SELECT * FROM chart_of_accounts WHERE is_active = 1 ORDER BY code').all();
   const tb = []; let td = 0, tc = 0;
   for (const acc of accounts) {
-    const r = await env.DB.prepare('SELECT COALESCE(SUM(CASE WHEN debit_account=? THEN amount ELSE 0 END),0) as td, COALESCE(SUM(CASE WHEN credit_account=? THEN amount ELSE 0 END),0) as tc FROM journal_entries WHERE date <= ?').bind(acc.code,acc.code,asOf).first();
+    let q = 'SELECT COALESCE(SUM(CASE WHEN debit_account=? THEN amount ELSE 0 END),0) as td, COALESCE(SUM(CASE WHEN credit_account=? THEN amount ELSE 0 END),0) as tc FROM journal_entries WHERE debit_account=? OR credit_account=? AND date <= ?';
+    const p = [acc.code, acc.code, acc.code, acc.code, asOf];
+    if (companyId) { q += ' AND company_id = ?'; p.push(companyId); }
+    const r = await env.DB.prepare(q).bind(...p).first();
     if (r.td > 0 || r.tc > 0) { tb.push({ code: acc.code, name: acc.name, description: acc.description, type: acc.type, debit: r.td, credit: r.tc }); td += r.td; tc += r.tc; }
   }
   return json({ as_of_date: asOf, accounts: tb, total_debit: td, total_credit: tc, balanced: Math.abs(td-tc)<0.01, difference: td-tc });
@@ -525,20 +534,40 @@ async function getTrialBalance(request, env) {
 
 async function getProfitLoss(request, env) {
   const url = new URL(request.url);
+  const companyId = url.searchParams.get('company_id');
   const from = url.searchParams.get('from') || new Date(new Date().getFullYear(),0,1).toISOString().split('T')[0];
   const to = url.searchParams.get('to') || new Date().toISOString().split('T')[0];
-  const rev = await env.DB.prepare('SELECT COALESCE(SUM(amount),0) as t FROM journal_entries WHERE credit_account LIKE ? AND date BETWEEN ? AND ?').bind('4%',from,to).first();
-  const cogs = await env.DB.prepare('SELECT COALESCE(SUM(amount),0) as t FROM journal_entries WHERE debit_account LIKE ? AND date BETWEEN ? AND ?').bind('5%',from,to).first();
-  const opex = await env.DB.prepare('SELECT COALESCE(SUM(amount),0) as t FROM journal_entries WHERE debit_account LIKE ? AND date BETWEEN ? AND ?').bind('6%',from,to).first();
+  let q1 = 'SELECT COALESCE(SUM(amount),0) as t FROM journal_entries WHERE credit_account LIKE ? AND date BETWEEN ? AND ?';
+  const p1 = ['4%', from, to];
+  if (companyId) { q1 += ' AND company_id = ?'; p1.push(companyId); }
+  const rev = await env.DB.prepare(q1).bind(...p1).first();
+  let q2 = 'SELECT COALESCE(SUM(amount),0) as t FROM journal_entries WHERE debit_account LIKE ? AND date BETWEEN ? AND ?';
+  const p2 = ['5%', from, to];
+  if (companyId) { q2 += ' AND company_id = ?'; p2.push(companyId); }
+  const cogs = await env.DB.prepare(q2).bind(...p2).first();
+  let q3 = 'SELECT COALESCE(SUM(amount),0) as t FROM journal_entries WHERE debit_account LIKE ? AND date BETWEEN ? AND ?';
+  const p3 = ['6%', from, to];
+  if (companyId) { q3 += ' AND company_id = ?'; p3.push(companyId); }
+  const opex = await env.DB.prepare(q3).bind(...p3).first();
   return json({ period: { from, to }, revenue: rev.t, cogs: cogs.t, gross_profit: rev.t - cogs.t, operating_expenses: opex.t, net_profit: rev.t - cogs.t - opex.t });
 }
 
 async function getBalanceSheet(request, env) {
   const url = new URL(request.url);
+  const companyId = url.searchParams.get('company_id');
   const asOf = url.searchParams.get('date') || new Date().toISOString().split('T')[0];
-  const assets = await env.DB.prepare('SELECT COALESCE(SUM(CASE WHEN debit_account LIKE ? THEN amount ELSE 0 END - CASE WHEN credit_account LIKE ? THEN amount ELSE 0 END),0) as t FROM journal_entries WHERE date <= ?').bind('1%','1%',asOf).first();
-  const liab = await env.DB.prepare('SELECT COALESCE(SUM(CASE WHEN credit_account LIKE ? THEN amount ELSE 0 END - CASE WHEN debit_account LIKE ? THEN amount ELSE 0 END),0) as t FROM journal_entries WHERE date <= ?').bind('2%','2%',asOf).first();
-  const eq = await env.DB.prepare('SELECT COALESCE(SUM(CASE WHEN credit_account LIKE ? THEN amount ELSE 0 END - CASE WHEN debit_account LIKE ? THEN amount ELSE 0 END),0) as t FROM journal_entries WHERE date <= ?').bind('3%','3%',asOf).first();
+  let qa = 'SELECT COALESCE(SUM(CASE WHEN debit_account LIKE ? THEN amount ELSE 0 END - CASE WHEN credit_account LIKE ? THEN amount ELSE 0 END),0) as t FROM journal_entries WHERE date <= ?';
+  const pa = ['1%', '1%', asOf];
+  if (companyId) { qa += ' AND company_id = ?'; pa.push(companyId); }
+  const assets = await env.DB.prepare(qa).bind(...pa).first();
+  let ql = 'SELECT COALESCE(SUM(CASE WHEN credit_account LIKE ? THEN amount ELSE 0 END - CASE WHEN debit_account LIKE ? THEN amount ELSE 0 END),0) as t FROM journal_entries WHERE date <= ?';
+  const pl = ['2%', '2%', asOf];
+  if (companyId) { ql += ' AND company_id = ?'; pl.push(companyId); }
+  const liab = await env.DB.prepare(ql).bind(...pl).first();
+  let qe = 'SELECT COALESCE(SUM(CASE WHEN credit_account LIKE ? THEN amount ELSE 0 END - CASE WHEN debit_account LIKE ? THEN amount ELSE 0 END),0) as t FROM journal_entries WHERE date <= ?';
+  const pe = ['3%', '3%', asOf];
+  if (companyId) { qe += ' AND company_id = ?'; pe.push(companyId); }
+  const eq = await env.DB.prepare(qe).bind(...pe).first();
   return json({ as_of_date: asOf, assets: assets.t, liabilities: liab.t, equity: eq.t, total_le: liab.t + eq.t, balanced: Math.abs(assets.t - (liab.t + eq.t)) < 0.01 });
 }
 
@@ -848,7 +877,7 @@ async function renderJournal(){
 
 async function renderLedger(){
   if(!S.ledgerAccount) S.ledgerAccount='1000';
-  const data=await api('/api/ledger?account='+S.ledgerAccount);
+  const data=await api('/api/ledger?account='+S.ledgerAccount+'&company_id='+(S.company?S.company.id:''));
   let h='<div class="fade-in space-y-4"><h2 class="text-2xl font-bold">General Ledger</h2>';
   h+='<div class="bg-white rounded-xl border p-4"><label class="text-sm font-medium text-gray-700">Select Account:</label>';
   h+='<select onchange="S.ledgerAccount=this.value;render()" class="mt-1 w-full px-3 py-2 border rounded-lg text-sm">';
@@ -867,7 +896,7 @@ async function renderLedger(){
 }
 
 async function renderTrialBalance(){
-  const data=await api('/api/trial-balance');
+  const data=await api('/api/trial-balance?company_id='+(S.company?S.company.id:''));
   let h='<div class="fade-in space-y-4"><div class="flex justify-between items-center"><h2 class="text-2xl font-bold">Trial Balance (Imbangan Duga)</h2>';
   h+='<button onclick="printTB()" class="px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-medium hover:bg-teal-700 no-print">🖨️ Print</button></div>';
   if(!data.balanced) h+='<div class="bg-red-50 border border-red-200 rounded-xl p-3"><p class="text-red-700 text-sm font-medium">⚠️ WARNING: Debits and Credits do not match! Difference: '+fmt(data.difference)+'</p></div>';
@@ -906,7 +935,7 @@ function renderPrintTB(data){
 }
 
 async function renderPL(){
-  const data=await api('/api/profit-loss');
+  const data=await api('/api/profit-loss?company_id='+(S.company?S.company.id:''));
   let h='<div class="fade-in space-y-4"><div class="flex justify-between items-center"><h2 class="text-2xl font-bold">Profit & Loss (Untung Rugi)</h2>';
   h+='<button onclick="printPL()" class="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 no-print">🖨️ Print</button></div>';
   h+='<div class="bg-white rounded-xl border p-6">';
@@ -947,7 +976,7 @@ function renderPrintPL(data){
 }
 
 async function renderBS(){
-  const data=await api('/api/balance-sheet');
+  const data=await api('/api/balance-sheet?company_id='+(S.company?S.company.id:''));
   let h='<div class="fade-in space-y-4"><div class="flex justify-between items-center"><h2 class="text-2xl font-bold">Balance Sheet (Neraca)</h2>';
   h+='<button onclick="printBS()" class="px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 no-print">🖨️ Print</button></div>';
   if(!data.balanced) h+='<div class="bg-red-50 border border-red-200 rounded-xl p-3"><p class="text-red-700 text-sm font-medium">⚠️ Balance Sheet does not balance! Assets ≠ Liabilities + Equity</p></div>';
